@@ -340,35 +340,159 @@ exportAlumnosBtn.addEventListener("click", () => {
 
     URL.revokeObjectURL(link.href);
 
-    const exportGiftTxtBtn = document.getElementById("exportGiftTxtBtn");
+});
+
+function procesarTextoGiftTXT(texto) {
+
+    const lineas = normalizarLineas(texto);
+
+    let salida = "";
+    let contadorCategoria = 1;
+
+    let i = 0;
+
+    while (i < lineas.length) {
+
+        /* ===============================
+           DETECTAR BLOQUE DE ALUMNOS
+        =============================== */
+
+        if (esEncabezadoAlumnos(lineas[i])) {
+
+            let alumnosGrupo = [];
+
+            // alumno en misma linea
+            let nombreInline = limpiarNombreAlumno(lineas[i]);
+            if (nombreInline) alumnosGrupo.push(nombreInline);
+
+            i++;
+
+            // alumnos en siguientes lineas
+            while (
+                i < lineas.length &&
+                !/^TEMA/i.test(lineas[i]) &&
+                !esEncabezadoAlumnos(lineas[i])
+            ) {
+
+                let nombre = limpiarNombreAlumno(lineas[i]);
+
+                if (nombre) alumnosGrupo.push(nombre);
+
+                i++;
+            }
+
+            /* ===============================
+               DETECTAR PREGUNTAS DEL GRUPO
+            =============================== */
+
+            let preguntasGrupo = [];
+
+            while (i < lineas.length) {
+
+                if (esEncabezadoAlumnos(lineas[i])) break;
+
+                if (esPregunta(lineas[i], lineas[i - 1])) {
+
+                    let textoPregunta = limpiarNumeroPregunta(lineas[i]);
+
+                    let opciones = [];
+
+                    i++;
+
+                    while (
+                        i < lineas.length &&
+                        !esPregunta(lineas[i], lineas[i - 1]) &&
+                        !esEncabezadoAlumnos(lineas[i])
+                    ) {
+
+                        if (esAlternativa(lineas[i])) {
+
+                            let opcion = lineas[i]
+                                .replace(/^[A-Ea-e][\)\.\s]+/, "")
+                                .trim();
+
+                            if (opcion) opciones.push(opcion);
+                        }
+
+                        i++;
+                    }
+
+                    if (textoPregunta && opciones.length) {
+
+                        preguntasGrupo.push({
+                            texto: textoPregunta,
+                            opciones: opciones
+                        });
+
+                    }
+
+                    continue;
+                }
+
+                i++;
+            }
+
+            /* ===============================
+               GENERAR CATEGORY POR ALUMNO
+            =============================== */
+
+            alumnosGrupo.forEach(() => {
+
+                let numero = String(contadorCategoria).padStart(2, "0");
+
+                salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${numero}.\n\n`;
+
+                preguntasGrupo.forEach((pregunta, index) => {
+
+                    salida += `::e_${index + 1}::${pregunta.texto}{\n`;
+
+                    pregunta.opciones.forEach((op, opIndex) => {
+
+                        salida += (opIndex === 0 ? "=" : "~") + op + "\n";
+
+                    });
+
+                    salida += "}\n\n";
+
+                });
+
+                contadorCategoria++;
+
+            });
+
+            continue;
+        }
+
+        i++;
+    }
+
+    return salida;
+}
 
 exportGiftTxtBtn.addEventListener("click", () => {
 
-    if (!textoOriginal || textoOriginal.trim() === "") {
+    if (!textoOriginal) {
 
         alert("Primero carga un archivo.");
         return;
-
     }
 
-    const resultado = procesarTextoTXT(textoOriginal);
+    const contenido = procesarTextoGiftTXT(textoOriginal);
 
-    if (!resultado || resultado.trim() === "") {
+    if (!contenido) {
 
         alert("No se generó contenido.");
         return;
-
     }
 
-    const blob = new Blob([resultado], {
+    const blob = new Blob([contenido], {
         type: "text/plain;charset=utf-8;"
     });
 
-    const url = URL.createObjectURL(blob);
-
     const link = document.createElement("a");
 
-    link.href = url;
+    link.href = URL.createObjectURL(blob);
+
     link.download = "banco_moodle.txt";
 
     document.body.appendChild(link);
@@ -376,158 +500,5 @@ exportGiftTxtBtn.addEventListener("click", () => {
     link.click();
 
     document.body.removeChild(link);
-
-    URL.revokeObjectURL(url);
-
-});
-function procesarTextoTXT(texto) {
-
-    const lineas = normalizarLineas(texto);
-
-    let grupos = [];
-    let preguntas = [];
-
-    let i = 0;
-
-    /* ===============================
-       DETECTAR GRUPOS DE ALUMNOS
-    =============================== */
-
-    while (i < lineas.length) {
-
-        if (esEncabezadoAlumnos(lineas[i])) {
-
-            let grupo = [];
-
-            let nombreLinea = limpiarNombreAlumno(lineas[i]);
-
-            if (nombreLinea)
-                grupo.push(nombreLinea);
-
-            i++;
-
-            while (
-                i < lineas.length &&
-                !esEncabezadoAlumnos(lineas[i]) &&
-                !/^TEMA/i.test(lineas[i])
-            ) {
-
-                let nombre = limpiarNombreAlumno(lineas[i]);
-
-                if (nombre)
-                    grupo.push(nombre);
-
-                i++;
-
-            }
-
-            if (grupo.length)
-                grupos.push(grupo);
-
-            continue;
-
-        }
-
-        i++;
-
-    }
-
-    /* ===============================
-       DETECTAR PREGUNTAS
-    =============================== */
-
-    i = 0;
-
-    while (i < lineas.length) {
-
-        if (esPregunta(lineas[i], lineas[i - 1])) {
-
-            let textoPregunta = limpiarNumeroPregunta(lineas[i]);
-
-            let opciones = [];
-
-            i++;
-
-            while (
-                i < lineas.length &&
-                !esPregunta(lineas[i], lineas[i - 1]) &&
-                !esEncabezadoAlumnos(lineas[i])
-            ) {
-
-                if (esAlternativa(lineas[i])) {
-
-                    let opcion = lineas[i]
-                        .replace(/^[A-Ea-e][\)\.\s]+/, "")
-                        .trim();
-
-                    if (opcion)
-                        opciones.push(opcion);
-
-                }
-
-                i++;
-
-            }
-
-            if (textoPregunta && opciones.length) {
-
-                preguntas.push({
-                    texto: textoPregunta,
-                    opciones: opciones
-                });
-
-            }
-
-            continue;
-
-        }
-
-        i++;
-
-    }
-
-    /* ===============================
-       GENERAR SALIDA
-    =============================== */
-
-    if (!grupos.length || !preguntas.length)
-        return "";
-
-    let salida = "";
-
-    let contadorGlobal = 1;
-
-    grupos.forEach(grupo => {
-
-        grupo.forEach(() => {
-
-            let numero = String(contadorGlobal).padStart(2, "0");
-
-            salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${numero}.\n\n`;
-
-            preguntas.forEach((pregunta, pIndex) => {
-
-                salida += `::e_${pIndex + 1}::${pregunta.texto}{\n`;
-
-                pregunta.opciones.forEach((op, opIndex) => {
-
-                    salida += (opIndex === 0 ? "=" : "~") + op + "\n";
-
-                });
-
-                salida += "}\n\n";
-
-            });
-
-            contadorGlobal++;
-
-        });
-
-    });
-
-    return salida;
-
-}
-
 
 });
