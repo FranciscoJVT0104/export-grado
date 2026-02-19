@@ -31,6 +31,12 @@ function normalizarLineas(texto) {
    DETECTORES
 ================================ */
 const esOpcion = linea => /^[a-eA-E]\s*\)/.test(linea);
+const esAlternativa = linea => /^[a-eA-E][\)\.\s]/.test(linea);
+
+const limpiarNumeroPregunta = linea =>
+    linea
+        .replace(/^\d+[\).:-]?\s*/, "")
+        .trim();
 
 const esPregunta = (linea, anterior) => {
     if (/^\d+\./.test(linea)) return true;
