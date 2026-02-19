@@ -469,6 +469,9 @@ function procesarTextoGiftTXT(texto) {
     return salida;
 }
 
+const exportGiftTxtBtn = document.getElementById("exportGiftTxtBtn");
+
+
 exportGiftTxtBtn.addEventListener("click", () => {
 
     if (!textoOriginal) {
