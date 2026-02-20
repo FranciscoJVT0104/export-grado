@@ -49,6 +49,10 @@ const esPregunta = (linea, anterior) => {
 const esEncabezadoAlumnos = linea =>
     /^(ALUMNOS?|ALUMNA?|ALUMNO\(A\)|ALUMNOS\(AS\)|APELLIDOS Y NOMBRES)\s*:/i.test(linea);
 
+function nombreEnMayusculas(nombre) {
+    return String(nombre || "").trim().toUpperCase();
+}
+
 /* ===============================
    LECTURA ARCHIVOS
 ================================ */
@@ -135,7 +139,7 @@ function parsearExcelExamen(filas) {
         if (celda.startsWith("$CATEGORY:")) {
             const m = celda.match(/\/(\d+)\.\s*(.+)$/);
             const numero = m ? m[1] : String(grupos.length + 1).padStart(2, "0");
-            const nombre = m ? m[2].trim() : `ALUMNO_${numero}`;
+            const nombre = nombreEnMayusculas(m ? m[2].trim() : `ALUMNO_${numero}`);
 
             grupoActual = {
                 alumno: { numero, nombre },
@@ -176,7 +180,7 @@ function parsearExcelExamen(filas) {
 
 function renderVistaExcel(datos) {
     const bloques = datos.grupos.map(grupo => {
-        let bloque = `${grupo.alumno.numero}. ${grupo.alumno.nombre}\n\n`;
+        let bloque = `${grupo.alumno.numero}. ${nombreEnMayusculas(grupo.alumno.nombre)}\n\n`;
 
         grupo.preguntas.forEach((pregunta, index) => {
             bloque += `${index + 1}. ${pregunta.texto}\n`;
@@ -221,7 +225,7 @@ function generarGiftDesdeExcel(datos) {
     let salida = "";
 
     datos.grupos.forEach(grupo => {
-        salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${grupo.alumno.numero}. ${grupo.alumno.nombre}\n\n`;
+        salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${grupo.alumno.numero}. ${nombreEnMayusculas(grupo.alumno.nombre)}\n\n`;
 
         grupo.preguntas.forEach((pregunta, index) => {
             salida += `::e_${index + 1}::${pregunta.texto}{\n`;
@@ -236,7 +240,7 @@ function generarGiftDesdeExcel(datos) {
 }
 
 function generarTxtAlumnoDesdeExcel(grupo) {
-    let salida = `${grupo.alumno.numero}. ${grupo.alumno.nombre}\n\n`;
+    let salida = `${grupo.alumno.numero}. ${nombreEnMayusculas(grupo.alumno.nombre)}\n\n`;
 
     grupo.preguntas.forEach((pregunta, index) => {
         salida += `${index + 1}. ${pregunta.texto}\n`;
@@ -283,7 +287,7 @@ function procesarTextoTXT(texto) {
                 .replace(/^[_\s]+/, "")
                 .replace(/,/g, "")
                 .trim();
-            if (nombre) r.push(nombre);
+            if (nombre) r.push(nombreEnMayusculas(nombre));
 
             i++;
             while (
@@ -295,7 +299,7 @@ function procesarTextoTXT(texto) {
                     .replace(/^[_\s]+/, "")
                     .replace(/,/g, "")
                     .trim();
-                if (x) r.push(x);
+                if (x) r.push(nombreEnMayusculas(x));
                 i++;
             }
             continue;
@@ -351,7 +355,7 @@ function procesarTextoExcel(texto) {
 
         alumnos.forEach(a => {
             filas.push([
-                `$CATEGORY: $course$/top/EXAMENES DE GRADO/${String(cat++).padStart(2, "0")}. ${a}`
+                `$CATEGORY: $course$/top/EXAMENES DE GRADO/${String(cat++).padStart(2, "0")}. ${nombreEnMayusculas(a)}`
             ]);
             filas.push([""]);
         });
@@ -381,7 +385,7 @@ function procesarTextoExcel(texto) {
                 .replace(/^[_\s]+/, "")
                 .replace(/,/g, "")
                 .trim();
-            if (nombre) alumnos.push(nombre);
+            if (nombre) alumnos.push(nombreEnMayusculas(nombre));
 
             i++;
             while (
@@ -393,7 +397,7 @@ function procesarTextoExcel(texto) {
                     .replace(/^[_\s]+/, "")
                     .replace(/,/g, "")
                     .trim();
-                if (x) alumnos.push(x);
+                if (x) alumnos.push(nombreEnMayusculas(x));
                 i++;
             }
             continue;
@@ -448,7 +452,7 @@ function limpiarNombreAlumno(texto) {
         return "";
     }
 
-    return limpio;
+    return nombreEnMayusculas(limpio);
 }
 
 exportAlumnosBtn.addEventListener("click", () => {
@@ -500,7 +504,7 @@ exportAlumnosBtn.addEventListener("click", () => {
 
     // enumerar
     const textoLista = alumnos
-        .map((a, index) => `${index + 1}. ${a}`)
+        .map((a, index) => `${index + 1}. ${nombreEnMayusculas(a)}`)
         .join("\n");
 
     // descargar
@@ -681,7 +685,7 @@ exportStudentTxtBtn.addEventListener("click", () => {
 
     datosExcelCargado.grupos.forEach((grupo, index) => {
         const contenidoAlumno = generarTxtAlumnoDesdeExcel(grupo);
-        const nombreArchivo = `${grupo.alumno.numero} - ${limpiarNombreArchivo(grupo.alumno.nombre)}.txt`;
+        const nombreArchivo = `${grupo.alumno.numero} - ${limpiarNombreArchivo(nombreEnMayusculas(grupo.alumno.nombre))}.txt`;
 
         setTimeout(() => {
             descargarTXT(nombreArchivo, contenidoAlumno);
