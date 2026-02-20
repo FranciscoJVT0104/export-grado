@@ -214,6 +214,32 @@ function descargarTXT(nombreArchivo, contenido) {
     URL.revokeObjectURL(link.href);
 }
 
+
+async function descargarCarpetaAlumnos(grupos) {
+    if (typeof JSZip === "undefined") {
+        alert("No se pudo cargar la librería para crear la carpeta ALUMNOS.");
+        return;
+    }
+
+    const zip = new JSZip();
+    const carpeta = zip.folder("ALUMNOS");
+
+    grupos.forEach(grupo => {
+        const contenidoAlumno = generarTxtAlumnoDesdeExcel(grupo);
+        const nombreArchivo = `${grupo.alumno.numero}. ${limpiarNombreArchivo(nombreEnMayusculas(grupo.alumno.nombre))}.txt`;
+        carpeta.file(nombreArchivo, contenidoAlumno);
+    });
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "ALUMNOS.zip";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+}
+
 function limpiarNombreArchivo(nombre) {
     return nombre
         .replace(/[\/:*?"<>|]/g, "_")
@@ -225,7 +251,7 @@ function generarGiftDesdeGrupos(grupos) {
     let salida = "";
 
     grupos.forEach(grupo => {
-        salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${grupo.alumno.numero}. ${nombreEnMayusculas(grupo.alumno.nombre)}\n\n`;
+        salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${grupo.alumno.numero}.\n\n`;
 
         grupo.preguntas.forEach((pregunta, index) => {
             salida += `::e_${index + 1}::${pregunta.texto}{\n`;
@@ -657,7 +683,7 @@ exportGiftTxtBtn.addEventListener("click", () => {
 
 });
 
-exportStudentTxtBtn.addEventListener("click", () => {
+exportStudentTxtBtn.addEventListener("click", async () => {
 
     let grupos = [];
 
@@ -675,12 +701,5 @@ exportStudentTxtBtn.addEventListener("click", () => {
         return;
     }
 
-    grupos.forEach((grupo, index) => {
-        const contenidoAlumno = generarTxtAlumnoDesdeExcel(grupo);
-        const nombreArchivo = `${grupo.alumno.numero} - ${limpiarNombreArchivo(nombreEnMayusculas(grupo.alumno.nombre))}.txt`;
-
-        setTimeout(() => {
-            descargarTXT(nombreArchivo, contenidoAlumno);
-        }, index * 200);
-    });
+    await descargarCarpetaAlumnos(grupos);
 });
