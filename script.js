@@ -204,18 +204,23 @@ function generarGiftDesdeExcel(datos) {
 }
 
 function generarTxtAlumnoDesdeExcel(alumno, preguntas) {
-    let salida = `$CATEGORY: $course$/top/EXAMENES DE GRADO/${alumno.numero}. ${alumno.nombre}\n\n`;
+    let salida = `${alumno.numero}. ${alumno.nombre}\n\n`;
 
     preguntas.forEach((pregunta, index) => {
-        salida += `::e_${index + 1}::${pregunta.texto}{\n`;
-        pregunta.opciones.forEach(op => {
-            salida += `${op}\n`;
+        salida += `${index + 1}. ${pregunta.texto}\n`;
+
+        pregunta.opciones.forEach((op, opIndex) => {
+            const textoOpcion = op.replace(/^[=~]\s*/, "").trim();
+            const letra = String.fromCharCode(97 + opIndex);
+            salida += `${letra}) ${textoOpcion}\n`;
         });
-        salida += "}\n\n";
+
+        salida += "\n";
     });
 
-    return salida;
+    return salida.trim() + "\n";
 }
+
 
 /* ===============================
    EXPORTAR TXT
