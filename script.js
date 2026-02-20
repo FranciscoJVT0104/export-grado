@@ -108,7 +108,7 @@ function leerExcel(file) {
 
         const parseado = parsearExcelExamen(filas);
 
-        if (!parseado.alumnos.length || !parseado.preguntas.length) {
+        if (!parseado.grupos.length || !parseado.grupos.some(g => g.preguntas.length)) {
             alert("El Excel no tiene el formato esperado.");
             return;
         }
@@ -116,16 +116,16 @@ function leerExcel(file) {
         datosExcelCargado = parseado;
         textoOriginal = "";
         textoProcesadoTXT = "";
-        output.value = `Excel cargado correctamente.\nAlumnos: ${parseado.alumnos.length}\nPreguntas: ${parseado.preguntas.length}`;
+        output.value = renderVistaExcel(parseado);
     };
 
     reader.readAsArrayBuffer(file);
 }
 
 function parsearExcelExamen(filas) {
-    const alumnos = [];
-    const preguntas = [];
+    const grupos = [];
 
+    let grupoActual = null;
     let preguntaActual = null;
 
     filas.forEach(row => {
@@ -134,20 +134,26 @@ function parsearExcelExamen(filas) {
 
         if (celda.startsWith("$CATEGORY:")) {
             const m = celda.match(/\/(\d+)\.\s*(.+)$/);
-            const numero = m ? m[1] : String(alumnos.length + 1).padStart(2, "0");
+            const numero = m ? m[1] : String(grupos.length + 1).padStart(2, "0");
             const nombre = m ? m[2].trim() : `ALUMNO_${numero}`;
-            alumnos.push({ numero, nombre });
+
+            grupoActual = {
+                alumno: { numero, nombre },
+                preguntas: []
+            };
+            grupos.push(grupoActual);
+            preguntaActual = null;
             return;
         }
 
         const qm = celda.match(/^::e_(\d+)::(.+)\{$/);
-        if (qm) {
+        if (qm && grupoActual) {
             preguntaActual = {
                 num: Number(qm[1]),
                 texto: qm[2].trim(),
                 opciones: []
             };
-            preguntas.push(preguntaActual);
+            grupoActual.preguntas.push(preguntaActual);
             return;
         }
 
@@ -161,7 +167,33 @@ function parsearExcelExamen(filas) {
         }
     });
 
-    return { alumnos, preguntas };
+    return {
+        grupos,
+        alumnos: grupos.map(g => g.alumno),
+        preguntas: grupos.flatMap(g => g.preguntas)
+    };
+}
+
+function renderVistaExcel(datos) {
+    const bloques = datos.grupos.map(grupo => {
+        let bloque = `${grupo.alumno.numero}. ${grupo.alumno.nombre}\n\n`;
+
+        grupo.preguntas.forEach((pregunta, index) => {
+            bloque += `${index + 1}. ${pregunta.texto}\n`;
+
+            pregunta.opciones.forEach((op, opIndex) => {
+                const textoOpcion = op.replace(/^[=~]\s*/, "").trim();
+                const letra = String.fromCharCode(97 + opIndex);
+                bloque += `${letra}) ${textoOpcion}\n`;
+            });
+
+            bloque += "\n";
+        });
+
+        return bloque.trim();
+    });
+
+    return bloques.join("\n\n------------------------------\n\n") + "\n";
 }
 
 function descargarTXT(nombreArchivo, contenido) {
@@ -180,7 +212,7 @@ function descargarTXT(nombreArchivo, contenido) {
 
 function limpiarNombreArchivo(nombre) {
     return nombre
-        .replace(/[\\/:*?"<>|]/g, "_")
+        .replace(/[\/:*?"<>|]/g, "_")
         .replace(/\s+/g, " ")
         .trim();
 }
@@ -188,10 +220,10 @@ function limpiarNombreArchivo(nombre) {
 function generarGiftDesdeExcel(datos) {
     let salida = "";
 
-    datos.alumnos.forEach(alumno => {
-        salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${alumno.numero}. ${alumno.nombre}\n\n`;
+    datos.grupos.forEach(grupo => {
+        salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${grupo.alumno.numero}. ${grupo.alumno.nombre}\n\n`;
 
-        datos.preguntas.forEach((pregunta, index) => {
+        grupo.preguntas.forEach((pregunta, index) => {
             salida += `::e_${index + 1}::${pregunta.texto}{\n`;
             pregunta.opciones.forEach(op => {
                 salida += `${op}\n`;
@@ -203,10 +235,10 @@ function generarGiftDesdeExcel(datos) {
     return salida;
 }
 
-function generarTxtAlumnoDesdeExcel(alumno, preguntas) {
-    let salida = `${alumno.numero}. ${alumno.nombre}\n\n`;
+function generarTxtAlumnoDesdeExcel(grupo) {
+    let salida = `${grupo.alumno.numero}. ${grupo.alumno.nombre}\n\n`;
 
-    preguntas.forEach((pregunta, index) => {
+    grupo.preguntas.forEach((pregunta, index) => {
         salida += `${index + 1}. ${pregunta.texto}\n`;
 
         pregunta.opciones.forEach((op, opIndex) => {
@@ -220,7 +252,6 @@ function generarTxtAlumnoDesdeExcel(alumno, preguntas) {
 
     return salida.trim() + "\n";
 }
-
 
 /* ===============================
    EXPORTAR TXT
@@ -643,14 +674,14 @@ exportStudentTxtBtn.addEventListener("click", () => {
         return;
     }
 
-    if (!datosExcelCargado.alumnos.length || !datosExcelCargado.preguntas.length) {
+    if (!datosExcelCargado.grupos.length || !datosExcelCargado.grupos.some(g => g.preguntas.length)) {
         alert("No hay datos suficientes para exportar archivos por alumno.");
         return;
     }
 
-    datosExcelCargado.alumnos.forEach((alumno, index) => {
-        const contenidoAlumno = generarTxtAlumnoDesdeExcel(alumno, datosExcelCargado.preguntas);
-        const nombreArchivo = `${alumno.numero} - ${limpiarNombreArchivo(alumno.nombre)}.txt`;
+    datosExcelCargado.grupos.forEach((grupo, index) => {
+        const contenidoAlumno = generarTxtAlumnoDesdeExcel(grupo);
+        const nombreArchivo = `${grupo.alumno.numero} - ${limpiarNombreArchivo(grupo.alumno.nombre)}.txt`;
 
         setTimeout(() => {
             descargarTXT(nombreArchivo, contenidoAlumno);
