@@ -4,12 +4,14 @@ const exportBtn = document.getElementById("exportBtn");
 const exportExcelBtn = document.getElementById("exportExcelBtn");
 const clearBtn = document.getElementById("clearBtn");
 const exportAlumnosBtn = document.getElementById("exportAlumnosBtn");
+const exportStudentTxtBtn = document.getElementById("exportStudentTxtBtn");
 
 /* ===============================
    VARIABLES
 ================================ */
 let textoOriginal = "";
 let textoProcesadoTXT = "";
+let datosExcelCargado = null;
 
 /* ===============================
    NORMALIZAR TEXTO
@@ -61,6 +63,7 @@ fileInput.addEventListener("change", function () {
     const ext = file.name.split(".").pop().toLowerCase();
     if (ext === "docx") leerWord(file);
     else if (ext === "txt") leerTXT(file);
+    else if (ext === "xlsx") leerExcel(file);
     else alert("Formato no soportado");
 });
 
@@ -70,6 +73,7 @@ function leerWord(file) {
         mammoth.extractRawText({ arrayBuffer: e.target.result })
             .then(r => {
                 textoOriginal = r.value;
+                datosExcelCargado = null;
                 textoProcesadoTXT = procesarTextoTXT(textoOriginal);
                 output.value = textoProcesadoTXT;
             });
@@ -81,11 +85,142 @@ function leerTXT(file) {
     const reader = new FileReader();
     reader.onload = e => {
         textoOriginal = e.target.result;
+        datosExcelCargado = null;
         textoProcesadoTXT = procesarTextoTXT(textoOriginal);
         output.value = textoProcesadoTXT;
     };
     reader.readAsText(file, "UTF-8");
 }
+
+
+function leerExcel(file) {
+    const reader = new FileReader();
+
+    reader.onload = e => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: "array" });
+        const hoja = workbook.Sheets[workbook.SheetNames[0]];
+        const filas = XLSX.utils.sheet_to_json(hoja, {
+            header: 1,
+            defval: "",
+            blankrows: false
+        });
+
+        const parseado = parsearExcelExamen(filas);
+
+        if (!parseado.alumnos.length || !parseado.preguntas.length) {
+            alert("El Excel no tiene el formato esperado.");
+            return;
+        }
+
+        datosExcelCargado = parseado;
+        textoOriginal = "";
+        textoProcesadoTXT = "";
+        output.value = `Excel cargado correctamente.\nAlumnos: ${parseado.alumnos.length}\nPreguntas: ${parseado.preguntas.length}`;
+    };
+
+    reader.readAsArrayBuffer(file);
+}
+
+function parsearExcelExamen(filas) {
+    const alumnos = [];
+    const preguntas = [];
+
+    let preguntaActual = null;
+
+    filas.forEach(row => {
+        const celda = String(row[0] ?? "").trim();
+        if (!celda) return;
+
+        if (celda.startsWith("$CATEGORY:")) {
+            const m = celda.match(/\/(\d+)\.\s*(.+)$/);
+            const numero = m ? m[1] : String(alumnos.length + 1).padStart(2, "0");
+            const nombre = m ? m[2].trim() : `ALUMNO_${numero}`;
+            alumnos.push({ numero, nombre });
+            return;
+        }
+
+        const qm = celda.match(/^::e_(\d+)::(.+)\{$/);
+        if (qm) {
+            preguntaActual = {
+                num: Number(qm[1]),
+                texto: qm[2].trim(),
+                opciones: []
+            };
+            preguntas.push(preguntaActual);
+            return;
+        }
+
+        if ((celda.startsWith("=") || celda.startsWith("~")) && preguntaActual) {
+            preguntaActual.opciones.push(celda);
+            return;
+        }
+
+        if (celda === "}") {
+            preguntaActual = null;
+        }
+    });
+
+    return { alumnos, preguntas };
+}
+
+function descargarTXT(nombreArchivo, contenido) {
+    const blob = new Blob([contenido], {
+        type: "text/plain;charset=utf-8;"
+    });
+
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = nombreArchivo;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+}
+
+function limpiarNombreArchivo(nombre) {
+    return nombre
+        .replace(/[\\/:*?"<>|]/g, "_")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function generarGiftDesdeExcel(datos) {
+    let salida = "";
+
+    datos.alumnos.forEach(alumno => {
+        salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${alumno.numero}. ${alumno.nombre}\n\n`;
+
+        datos.preguntas.forEach((pregunta, index) => {
+            salida += `::e_${index + 1}::${pregunta.texto}{\n`;
+            pregunta.opciones.forEach(op => {
+                salida += `${op}\n`;
+            });
+            salida += "}\n\n";
+        });
+    });
+
+    return salida;
+}
+
+function generarTxtAlumnoDesdeExcel(alumno, preguntas) {
+    let salida = `${alumno.numero}. ${alumno.nombre}\n\n`;
+
+    preguntas.forEach((pregunta, index) => {
+        salida += `${index + 1}. ${pregunta.texto}\n`;
+
+        pregunta.opciones.forEach((op, opIndex) => {
+            const textoOpcion = op.replace(/^[=~]\s*/, "").trim();
+            const letra = String.fromCharCode(97 + opIndex);
+            salida += `${letra}) ${textoOpcion}\n`;
+        });
+
+        salida += "\n";
+    });
+
+    return salida.trim() + "\n";
+}
+
 
 /* ===============================
    EXPORTAR TXT
@@ -261,6 +396,7 @@ clearBtn.addEventListener("click", () => {
     document.getElementById("fileName").textContent = "";
     textoOriginal = "";
     textoProcesadoTXT = "";
+    datosExcelCargado = null;
 });
 
 /* ===============================
@@ -480,34 +616,44 @@ const exportGiftTxtBtn = document.getElementById("exportGiftTxtBtn");
 
 exportGiftTxtBtn.addEventListener("click", () => {
 
-    if (!textoOriginal) {
+    let contenido = "";
 
-        alert("Primero carga un archivo.");
-        return;
+    if (datosExcelCargado) {
+        contenido = generarGiftDesdeExcel(datosExcelCargado);
+    } else {
+        if (!textoOriginal) {
+            alert("Primero carga un archivo.");
+            return;
+        }
+        contenido = procesarTextoGiftTXT(textoOriginal);
     }
 
-    const contenido = procesarTextoGiftTXT(textoOriginal);
-
     if (!contenido) {
-
         alert("No se generó contenido.");
         return;
     }
 
-    const blob = new Blob([contenido], {
-        type: "text/plain;charset=utf-8;"
+    descargarTXT("banco_moodle.txt", contenido);
+
+});
+
+exportStudentTxtBtn.addEventListener("click", () => {
+    if (!datosExcelCargado) {
+        alert('Primero carga el archivo "examenes_grado.xlsx".');
+        return;
+    }
+
+    if (!datosExcelCargado.alumnos.length || !datosExcelCargado.preguntas.length) {
+        alert("No hay datos suficientes para exportar archivos por alumno.");
+        return;
+    }
+
+    datosExcelCargado.alumnos.forEach((alumno, index) => {
+        const contenidoAlumno = generarTxtAlumnoDesdeExcel(alumno, datosExcelCargado.preguntas);
+        const nombreArchivo = `${alumno.numero} - ${limpiarNombreArchivo(alumno.nombre)}.txt`;
+
+        setTimeout(() => {
+            descargarTXT(nombreArchivo, contenidoAlumno);
+        }, index * 200);
     });
-
-    const link = document.createElement("a");
-
-    link.href = URL.createObjectURL(blob);
-
-    link.download = "banco_moodle.txt";
-
-    document.body.appendChild(link);
-
-    link.click();
-
-    document.body.removeChild(link);
-
 });
