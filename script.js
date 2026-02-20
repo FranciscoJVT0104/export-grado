@@ -221,17 +221,26 @@ function limpiarNombreArchivo(nombre) {
         .trim();
 }
 
-function generarGiftDesdeExcel(datos) {
+function generarGiftDesdeGrupos(grupos) {
     let salida = "";
 
-    datos.grupos.forEach(grupo => {
+    grupos.forEach(grupo => {
         salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${grupo.alumno.numero}. ${nombreEnMayusculas(grupo.alumno.nombre)}\n\n`;
 
         grupo.preguntas.forEach((pregunta, index) => {
             salida += `::e_${index + 1}::${pregunta.texto}{\n`;
-            pregunta.opciones.forEach(op => {
-                salida += `${op}\n`;
+
+            pregunta.opciones.forEach((opcion, opIndex) => {
+                const opTexto = String(opcion).trim();
+                if (!opTexto) return;
+
+                if (/^[=~]/.test(opTexto)) {
+                    salida += `${opTexto}\n`;
+                } else {
+                    salida += `${opIndex === 0 ? "=" : "~"}${opTexto}\n`;
+                }
             });
+
             salida += "}\n\n";
         });
     });
@@ -239,22 +248,120 @@ function generarGiftDesdeExcel(datos) {
     return salida;
 }
 
+function generarGiftDesdeExcel(datos) {
+    return generarGiftDesdeGrupos(datos.grupos || []);
+}
+
 function generarTxtAlumnoDesdeExcel(grupo) {
-    let salida = `${grupo.alumno.numero}. ${nombreEnMayusculas(grupo.alumno.nombre)}\n\n`;
+    return generarGiftDesdeGrupos([grupo]);
+}
 
-    grupo.preguntas.forEach((pregunta, index) => {
-        salida += `${index + 1}. ${pregunta.texto}\n`;
+function extraerGruposDesdeTexto(texto) {
 
-        pregunta.opciones.forEach((op, opIndex) => {
-            const textoOpcion = op.replace(/^[=~]\s*/, "").trim();
-            const letra = String.fromCharCode(97 + opIndex);
-            salida += `${letra}) ${textoOpcion}\n`;
-        });
+    const lineas = normalizarLineas(texto);
 
-        salida += "\n";
-    });
+    let grupos = [];
+    let contadorCategoria = 1;
 
-    return salida.trim() + "\n";
+    let i = 0;
+
+    while (i < lineas.length) {
+
+        if (esEncabezadoAlumnos(lineas[i])) {
+
+            let alumnosGrupo = [];
+
+            let nombreInline = limpiarNombreAlumno(lineas[i]);
+            if (nombreInline) alumnosGrupo.push(nombreInline);
+
+            i++;
+
+            while (
+                i < lineas.length &&
+                !/^TEMA/i.test(lineas[i]) &&
+                !esEncabezadoAlumnos(lineas[i])
+            ) {
+
+                let nombre = limpiarNombreAlumno(lineas[i]);
+
+                if (nombre) alumnosGrupo.push(nombre);
+
+                i++;
+            }
+
+            let preguntasGrupo = [];
+
+            while (i < lineas.length) {
+
+                if (esEncabezadoAlumnos(lineas[i])) break;
+
+                if (esPregunta(lineas[i], lineas[i - 1])) {
+
+                    let textoPregunta = limpiarNumeroPregunta(lineas[i]);
+
+                    let opciones = [];
+
+                    i++;
+
+                    while (
+                        i < lineas.length &&
+                        !esPregunta(lineas[i], lineas[i - 1]) &&
+                        !esEncabezadoAlumnos(lineas[i])
+                    ) {
+
+                        if (esAlternativa(lineas[i])) {
+
+                            let opcion = lineas[i]
+                                .replace(/^[A-Ea-e][\)\.\s]+/, "")
+                                .trim();
+
+                            if (opcion) opciones.push(opcion);
+                        }
+
+                        i++;
+                    }
+
+                    if (textoPregunta && opciones.length) {
+
+                        preguntasGrupo.push({
+                            texto: textoPregunta,
+                            opciones: opciones
+                        });
+
+                    }
+
+                    continue;
+                }
+
+                i++;
+            }
+
+            alumnosGrupo.forEach((alumnoNombre) => {
+
+                let numero = String(contadorCategoria).padStart(2, "0");
+
+                grupos.push({
+                    alumno: {
+                        numero,
+                        nombre: nombreEnMayusculas(alumnoNombre)
+                    },
+                    preguntas: preguntasGrupo.map(p => ({
+                        texto: p.texto,
+                        opciones: [...p.opciones]
+                    }))
+                });
+
+                contadorCategoria++;
+
+            });
+
+            continue;
+        }
+
+        i++;
+    }
+
+    return grupos;
 }
 
 /* ===============================
@@ -520,130 +627,8 @@ exportAlumnosBtn.addEventListener("click", () => {
 });
 
 function procesarTextoGiftTXT(texto) {
-
-    const lineas = normalizarLineas(texto);
-
-    let salida = "";
-    let contadorCategoria = 1;
-
-    let i = 0;
-
-    while (i < lineas.length) {
-
-        /* ===============================
-           DETECTAR BLOQUE DE ALUMNOS
-        =============================== */
-
-        if (esEncabezadoAlumnos(lineas[i])) {
-
-            let alumnosGrupo = [];
-
-            // alumno en misma linea
-            let nombreInline = limpiarNombreAlumno(lineas[i]);
-            if (nombreInline) alumnosGrupo.push(nombreInline);
-
-            i++;
-
-            // alumnos en siguientes lineas
-            while (
-                i < lineas.length &&
-                !/^TEMA/i.test(lineas[i]) &&
-                !esEncabezadoAlumnos(lineas[i])
-            ) {
-
-                let nombre = limpiarNombreAlumno(lineas[i]);
-
-                if (nombre) alumnosGrupo.push(nombre);
-
-                i++;
-            }
-
-            /* ===============================
-               DETECTAR PREGUNTAS DEL GRUPO
-            =============================== */
-
-            let preguntasGrupo = [];
-
-            while (i < lineas.length) {
-
-                if (esEncabezadoAlumnos(lineas[i])) break;
-
-                if (esPregunta(lineas[i], lineas[i - 1])) {
-
-                    let textoPregunta = limpiarNumeroPregunta(lineas[i]);
-
-                    let opciones = [];
-
-                    i++;
-
-                    while (
-                        i < lineas.length &&
-                        !esPregunta(lineas[i], lineas[i - 1]) &&
-                        !esEncabezadoAlumnos(lineas[i])
-                    ) {
-
-                        if (esAlternativa(lineas[i])) {
-
-                            let opcion = lineas[i]
-                                .replace(/^[A-Ea-e][\)\.\s]+/, "")
-                                .trim();
-
-                            if (opcion) opciones.push(opcion);
-                        }
-
-                        i++;
-                    }
-
-                    if (textoPregunta && opciones.length) {
-
-                        preguntasGrupo.push({
-                            texto: textoPregunta,
-                            opciones: opciones
-                        });
-
-                    }
-
-                    continue;
-                }
-
-                i++;
-            }
-
-            /* ===============================
-               GENERAR CATEGORY POR ALUMNO
-            =============================== */
-
-            alumnosGrupo.forEach(() => {
-
-                let numero = String(contadorCategoria).padStart(2, "0");
-
-                salida += `$CATEGORY: $course$/top/EXAMENES DE GRADO/${numero}.\n\n`;
-
-                preguntasGrupo.forEach((pregunta, index) => {
-
-                    salida += `::e_${index + 1}::${pregunta.texto}{\n`;
-
-                    pregunta.opciones.forEach((op, opIndex) => {
-
-                        salida += (opIndex === 0 ? "=" : "~") + op + "\n";
-
-                    });
-
-                    salida += "}\n\n";
-
-                });
-
-                contadorCategoria++;
-
-            });
-
-            continue;
-        }
-
-        i++;
-    }
-
-    return salida;
+    const grupos = extraerGruposDesdeTexto(texto);
+    return generarGiftDesdeGrupos(grupos);
 }
 
 const exportGiftTxtBtn = document.getElementById("exportGiftTxtBtn");
@@ -673,17 +658,24 @@ exportGiftTxtBtn.addEventListener("click", () => {
 });
 
 exportStudentTxtBtn.addEventListener("click", () => {
-    if (!datosExcelCargado) {
-        alert('Primero carga el archivo "examenes_grado.xlsx".');
+
+    let grupos = [];
+
+    if (datosExcelCargado && datosExcelCargado.grupos) {
+        grupos = datosExcelCargado.grupos;
+    } else if (textoOriginal) {
+        grupos = extraerGruposDesdeTexto(textoOriginal);
+    } else {
+        alert("Primero carga un archivo.");
         return;
     }
 
-    if (!datosExcelCargado.grupos.length || !datosExcelCargado.grupos.some(g => g.preguntas.length)) {
+    if (!grupos.length || !grupos.some(g => g.preguntas.length)) {
         alert("No hay datos suficientes para exportar archivos por alumno.");
         return;
     }
 
-    datosExcelCargado.grupos.forEach((grupo, index) => {
+    grupos.forEach((grupo, index) => {
         const contenidoAlumno = generarTxtAlumnoDesdeExcel(grupo);
         const nombreArchivo = `${grupo.alumno.numero} - ${limpiarNombreArchivo(nombreEnMayusculas(grupo.alumno.nombre))}.txt`;
 
