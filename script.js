@@ -32,8 +32,17 @@ function normalizarLineas(texto) {
 /* ===============================
    DETECTORES
 ================================ */
-const esOpcion = linea => /^[a-eA-E]\s*\)/.test(linea);
-const esAlternativa = linea => /^[a-eA-E][\)\.\s]/.test(linea);
+const esOpcion = linea => /^\(?\s*[a-eA-E]\s*[\)\.]\s*\.?/.test(linea);
+const esAlternativa = linea => /^\(?\s*[a-eA-E]\s*[\)\.]\s*\.?/.test(linea);
+
+function normalizarAlternativa(linea) {
+    const match = String(linea || "").trim().match(/^\(?\s*([a-eA-E])\s*[\)\.]\s*\.?\s*(.*)$/);
+    if (!match) return "";
+
+    const letra = match[1].toLowerCase();
+    const texto = match[2].trim();
+    return `(${letra}). ${texto}`.trim();
+}
 
 const limpiarNumeroPregunta = linea =>
     linea
@@ -188,7 +197,7 @@ function renderVistaExcel(datos) {
             pregunta.opciones.forEach((op, opIndex) => {
                 const textoOpcion = op.replace(/^[=~]\s*/, "").trim();
                 const letra = String.fromCharCode(97 + opIndex);
-                bloque += `${letra}) ${textoOpcion}\n`;
+                bloque += `(${letra}). ${textoOpcion}\n`;
             });
 
             bloque += "\n";
@@ -337,8 +346,8 @@ function extraerGruposDesdeTexto(texto) {
 
                         if (esAlternativa(lineas[i])) {
 
-                            let opcion = lineas[i]
-                                .replace(/^[A-Ea-e][\)\.\s]+/, "")
+                            let opcion = normalizarAlternativa(lineas[i])
+                                .replace(/^\([a-e]\)\.\s*/i, "")
                                 .trim();
 
                             if (opcion) opciones.push(opcion);
@@ -448,7 +457,7 @@ function procesarTextoTXT(texto) {
             r.push(`${n}. ${l.replace(/^\d+\.\s*/, "")}`);
             i++;
             while (i < lineas.length && !esPregunta(lineas[i], lineas[i - 1])) {
-                if (esOpcion(lineas[i])) r.push(lineas[i]);
+                if (esOpcion(lineas[i])) r.push(normalizarAlternativa(lineas[i]));
                 i++;
             }
             r.push("");
@@ -496,7 +505,7 @@ function procesarTextoExcel(texto) {
         preguntas.forEach(p => {
             filas.push([`::e_${p.num}::${p.texto}{`]);
             p.opciones.forEach((o, i) => {
-                let limpio = o.replace(/^[a-eA-E]\s*\)\s*/, "");
+                let limpio = normalizarAlternativa(o).replace(/^\([a-e]\)\.\s*/i, "");
                 filas.push([(i === 0 ? "=" : "~") + limpio]);
             });
             filas.push(["}"]);
