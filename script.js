@@ -41,7 +41,7 @@ function normalizarAlternativa(linea) {
 
     const letra = match[1].toLowerCase();
     const texto = match[2].trim();
-    return `${letra}). ${texto}`.trim();
+    return `${letra}) ${texto}`.trim();
 }
 
 const limpiarNumeroPregunta = linea =>
@@ -197,7 +197,7 @@ function renderVistaExcel(datos) {
             pregunta.opciones.forEach((op, opIndex) => {
                 const textoOpcion = op.replace(/^[=~]\s*/, "").trim();
                 const letra = String.fromCharCode(97 + opIndex);
-                bloque += `${letra}). ${textoOpcion}\n`;            });
+                bloque += `${letra}) ${textoOpcion}\n`;            });
 
             bloque += "\n";
         });
@@ -346,7 +346,7 @@ function extraerGruposDesdeTexto(texto) {
                         if (esAlternativa(lineas[i])) {
 
                            let opcion = normalizarAlternativa(lineas[i])
-                                .replace(/^[a-e]\)\.\s*/i, "")
+                                .replace(/^[a-e]\)\s*/i, "")
                                 .trim();
 
                             if (opcion) opciones.push(opcion);
@@ -504,7 +504,7 @@ function procesarTextoExcel(texto) {
         preguntas.forEach(p => {
             filas.push([`::e_${p.num}::${p.texto}{`]);
             p.opciones.forEach((o, i) => {
-let limpio = normalizarAlternativa(o).replace(/^[a-e]\)\.\s*/i, "");
+let limpio = normalizarAlternativa(o).replace(/^[a-e]\)\s*/i, "");
                filas.push([(i === 0 ? "=" : "~") + limpio]);
             });
             filas.push(["}"]);
