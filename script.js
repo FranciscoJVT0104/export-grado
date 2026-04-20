@@ -32,15 +32,34 @@ function normalizarLineas(texto) {
 /* ===============================
    DETECTORES
 ================================ */
-const esOpcion = linea => /^\(?\s*[a-eA-E]\s*[\)\.]\s*\.?/.test(linea);
-const esAlternativa = linea => /^\(?\s*[a-eA-E]\s*[\)\.]\s*\.?/.test(linea);
+const esOpcion = linea => /^[a-eA-E]\s*[\.\)](\s|$)/.test(linea);
+
+const getLetraOpcion = linea => {
+    const match = linea.match(/^([a-eA-E])\s*[\.\)]/);
+    return match ? match[1].toUpperCase() : null;
+};
+
+const getSeparadorOpcion = linea => {
+    const match = linea.match(/^[a-eA-E]\s*([\.\)])/);
+    return match ? match[1] : null;
+};
+
+const esAlternativa = linea => /^[a-eA-E]\s*[\.\)](\s|$)/.test(linea);
 
 function normalizarAlternativa(linea) {
-    const match = String(linea || "").trim().match(/^\(?\s*([a-eA-E])\s*[\)\.]\s*\.?\s*(.*)$/);
-    if (!match) return "";
+    const match = String(linea || "").trim().match(/^([a-eA-E])\s*[\.\)]\s*(.*)$/);
+    if (!match) return String(linea || "").trim();
 
     const letra = match[1].toLowerCase();
-    const texto = match[2].trim();
+    let texto = match[2].trim();
+
+    if (texto) {
+        // Formato tipo oración: Primera en mayúscula, resto en minúscula
+        texto = texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase();
+        // Asegurar que termine en punto
+        if (!texto.endsWith(".")) texto += ".";
+    }
+
     return `${letra}) ${texto}`.trim();
 }
 
@@ -49,17 +68,33 @@ const limpiarNumeroPregunta = linea =>
         .replace(/^\d+[\).:-]?\s*/, "")
         .trim();
 
-const esPregunta = (linea, anterior) => {
-    if (/^\d+\./.test(linea)) return true;
-    if (anterior && /^[eE]\s*\)/.test(anterior)) return true;
-    return false;
+const esPregunta = (linea) => {
+    return /^\d+\./.test(linea);
 };
 
-const esEncabezadoAlumnos = linea =>
-    /^(ALUMNOS?|ALUMNA?|ALUMNO\(A\)|ALUMNOS\(AS\)|APELLIDOS Y NOMBRES)\s*:/i.test(linea);
+const RE_ENCABEZADO_ALUMNOS = /^(ALUMNOS\s*\(AS\)|ALUMNOS?\s*\(A\)|ALUMNOS\s+\(AS\)|APELLIDOS\s+Y\s+NOMBRES|ALUMNOS|ALUMNA|ALUMNO)\s*[:\-\s]*/i;
+
+const esEncabezadoAlumnos = linea => RE_ENCABEZADO_ALUMNOS.test(linea);
 
 function nombreEnMayusculas(nombre) {
     return String(nombre || "").trim().toUpperCase();
+}
+
+function normalizarPregunta(texto) {
+    let t = String(texto || "").trim();
+
+    const tieneInicio = t.includes("¿");
+    const tieneFin = t.includes("?");
+
+    if (tieneInicio && tieneFin) {
+        // Balanceado: eliminar espacios innecesarios tras ¿ y antes de ?
+        t = t.replace(/¿\s+/g, "¿").replace(/\s+\?/g, "?");
+    } else {
+        // Desbalanceado: eliminar signos y limpiar espacios sobrantes
+        t = t.replace(/[¿?]/g, "").trim();
+    }
+
+    return t.toUpperCase();
 }
 
 /* ===============================
@@ -313,11 +348,11 @@ function extraerGruposDesdeTexto(texto) {
             while (
                 i < lineas.length &&
                 !/^TEMA/i.test(lineas[i]) &&
-                !esEncabezadoAlumnos(lineas[i])
+                !esEncabezadoAlumnos(lineas[i]) &&
+                !esPregunta(lineas[i])
             ) {
 
                 let nombre = limpiarNombreAlumno(lineas[i]);
-
                 if (nombre) alumnosGrupo.push(nombre);
 
                 i++;
@@ -329,23 +364,31 @@ function extraerGruposDesdeTexto(texto) {
 
                 if (esEncabezadoAlumnos(lineas[i])) break;
 
-                if (esPregunta(lineas[i], lineas[i - 1])) {
-
-                    let textoPregunta = limpiarNumeroPregunta(lineas[i]);
-
-                    let opciones = [];
-
+                if (esPregunta(lineas[i])) {
+                    let textoPreguntaLines = [limpiarNumeroPregunta(lineas[i])];
                     i++;
 
                     while (
                         i < lineas.length &&
-                        !esPregunta(lineas[i], lineas[i - 1]) &&
+                        !esPregunta(lineas[i]) &&
                         !esEncabezadoAlumnos(lineas[i])
                     ) {
+                        let letra = getLetraOpcion(lineas[i]);
+                        if (letra === 'A') break;
+                        textoPreguntaLines.push(lineas[i]);
+                        i++;
+                    }
 
+                    let textoPregunta = normalizarPregunta(textoPreguntaLines.join(" "));
+                    let opciones = [];
+
+                    while (
+                        i < lineas.length &&
+                        !esPregunta(lineas[i]) &&
+                        !esEncabezadoAlumnos(lineas[i])
+                    ) {
                         if (esAlternativa(lineas[i])) {
-
-                           let opcion = normalizarAlternativa(lineas[i])
+                            let opcion = normalizarAlternativa(lineas[i])
                                 .replace(/^[a-e]\)\s*/i, "")
                                 .trim();
 
@@ -356,14 +399,11 @@ function extraerGruposDesdeTexto(texto) {
                     }
 
                     if (textoPregunta && opciones.length) {
-
                         preguntasGrupo.push({
                             texto: textoPregunta,
                             opciones: opciones
                         });
-
                     }
-
                     continue;
                 }
 
@@ -423,23 +463,17 @@ function procesarTextoTXT(texto) {
         if (esEncabezadoAlumnos(l)) {
             n = 1;
 
-            let nombre = l
-                .replace(/^(ALUMNOS?|ALUMNA?|ALUMNO\(A\)|ALUMNOS\(AS\)|APELLIDOS Y NOMBRES)\s*:/i, "")
-                .replace(/^[_\s]+/, "")
-                .replace(/,/g, "")
-                .trim();
+            let nombre = limpiarNombreAlumno(l);
             if (nombre) r.push(nombreEnMayusculas(nombre));
 
             i++;
             while (
                 i < lineas.length &&
                 !/^TEMA/i.test(lineas[i]) &&
-                !esPregunta(lineas[i], lineas[i - 1])
+                !esEncabezadoAlumnos(lineas[i]) &&
+                !esPregunta(lineas[i])
             ) {
-                let x = lineas[i]
-                    .replace(/^[_\s]+/, "")
-                    .replace(/,/g, "")
-                    .trim();
+                let x = limpiarNombreAlumno(lineas[i]);
                 if (x) r.push(nombreEnMayusculas(x));
                 i++;
             }
@@ -452,12 +486,24 @@ function procesarTextoTXT(texto) {
             continue;
         }
 
-        if (esPregunta(l, lineas[i - 1])) {
-            r.push(`${n}. ${l.replace(/^\d+\.\s*/, "")}`);
+        if (esPregunta(l)) {
+            let textoPreguntaLines = [l.replace(/^\d+\.\s*/, "")];
             i++;
-            while (i < lineas.length && !esPregunta(lineas[i], lineas[i - 1])) {
-if (esOpcion(lineas[i])) r.push(normalizarAlternativa(lineas[i]));
-               i++;
+
+            // Primero recolectamos todo el texto de la pregunta hasta encontrar la primera opción (A) o nuevo encabezado
+            while (i < lineas.length && !esPregunta(lineas[i]) && !esEncabezadoAlumnos(lineas[i])) {
+                let letra = getLetraOpcion(lineas[i]);
+                if (letra === 'A') break;
+                textoPreguntaLines.push(lineas[i]);
+                i++;
+            }
+            
+            r.push(`${n}. ${normalizarPregunta(textoPreguntaLines.join(" "))}`);
+
+            // Luego recolectamos las opciones, deteniéndonos si empieza otro examen o pregunta
+            while (i < lineas.length && !esPregunta(lineas[i]) && !esEncabezadoAlumnos(lineas[i])) {
+                if (esOpcion(lineas[i])) r.push(normalizarAlternativa(lineas[i]));
+                i++;
             }
             r.push("");
             n++;
@@ -521,38 +567,43 @@ let limpio = normalizarAlternativa(o).replace(/^[a-e]\)\s*/i, "");
         if (esEncabezadoAlumnos(l[i])) {
             cerrar();
 
-            let nombre = l[i]
-                .replace(/^(ALUMNOS?|ALUMNA?|ALUMNO\(A\)|ALUMNOS\(AS\)|APELLIDOS Y NOMBRES)\s*:/i, "")
-                .replace(/^[_\s]+/, "")
-                .replace(/,/g, "")
-                .trim();
+            let nombre = limpiarNombreAlumno(l[i]);
             if (nombre) alumnos.push(nombreEnMayusculas(nombre));
 
             i++;
             while (
                 i < l.length &&
                 !/^TEMA/i.test(l[i]) &&
-                !esPregunta(l[i], l[i - 1])
+                !esEncabezadoAlumnos(l[i]) &&
+                !esPregunta(l[i])
             ) {
-                let x = l[i]
-                    .replace(/^[_\s]+/, "")
-                    .replace(/,/g, "")
-                    .trim();
+                let x = limpiarNombreAlumno(l[i]);
                 if (x) alumnos.push(nombreEnMayusculas(x));
                 i++;
             }
             continue;
         }
 
-        if (esPregunta(l[i], l[i - 1])) {
-            let textoPregunta = l[i].replace(/^\d+\.\s*/, "");
-            let ops = [];
+        if (esPregunta(l[i])) {
+            let textoPreguntaLines = [l[i].replace(/^\d+\.\s*/, "")];
             i++;
-            while (i < l.length && !esPregunta(l[i], l[i - 1])) {
+
+            // Recolectar enunciado multi-línea hasta encontrar A o nuevo encabezado
+            while (i < l.length && !esPregunta(l[i]) && !esEncabezadoAlumnos(l[i])) {
+                let letra = getLetraOpcion(l[i]);
+                if (letra === 'A') break;
+                textoPreguntaLines.push(l[i]);
+                i++;
+            }
+            
+            let textoCompleto = normalizarPregunta(textoPreguntaLines.join(" "));
+            let ops = [];
+            
+            while (i < l.length && !esPregunta(l[i]) && !esEncabezadoAlumnos(l[i])) {
                 if (esOpcion(l[i])) ops.push(l[i]);
                 i++;
             }
-            preguntas.push({ num: num++, texto: textoPregunta, opciones: ops });
+            preguntas.push({ num: num++, texto: textoCompleto, opciones: ops });
             continue;
         }
 
@@ -581,7 +632,9 @@ clearBtn.addEventListener("click", () => {
 function limpiarNombreAlumno(texto) {
 
     let limpio = texto
-        .replace(/^(ALUMNOS?|ALUMNAS?|ALUMNOS\(AS\)|ALUMNO\(A\)|ALUMNA\(O\)|APELLIDOS Y NOMBRES)\s*:/i, "")
+        .replace(RE_ENCABEZADO_ALUMNOS, "")
+        // Eliminar información de contacto (celular, etc.) y cualquier residuo de "/ cel:", "celular:", etc.
+        .replace(/[\/\s]*\b(celular|cel|CELULAR|CEL)\b\s*:?\s*[\d\s\.\-]*/gi, "")
         .replace(/^[_•\-\s]+/, "")
         .replace(/,/g, "")
         .trim();

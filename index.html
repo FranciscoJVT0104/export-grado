@@ -3,40 +3,44 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Lector Word a TXT</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Examen Grado - Procesador Inteligente</title>
+    <meta name="description" content="Herramienta avanzada para transformar exámenes de grado a formatos TXT, Excel y GIFT de Moodle.">
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
 
     <div class="container">
-        <div class="item">
-            <h1>EXAMEN DE GRADO- FORMATO TXT / GIFT(EXCEL)</h1>
-        </div>
+        <header class="header-section">
+            <h1>TRANSFORMADOR DE EXÁMENES DE GRADO</h1>
+            
+            <div class="file-input-wrapper">
+                <input type="file" id="fileInput" accept=".docx,.txt,.xlsx" hidden>
+                <label for="fileInput" class="file-label" id="fileBtn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Seleccionar Archivo
+                </label>
+                <span id="fileName">Ningún archivo seleccionado</span>
+            </div>
+        </header>
 
-        <div class="item">
-            <input type="file" id="fileInput" accept=".docx,.txt,.xlsx" hidden>
-            <label for="fileInput" class="file-label" id="fileBtn">Seleccionar archivo</label>
-            <span id="fileName"></span>
-        </div>
-
-        <div class="item">
+        <section class="actions-grid">
             <button id="exportBtn">Exportar a TXT</button>
             <button id="exportExcelBtn">Exportar a Excel</button>
-            <button id="clearBtn">Limpiar</button> <!-- NUEVO -->
-            <button id="exportAlumnosBtn">Descargar Lista de Alumnos</button>
-            <button id="exportGiftTxtBtn">Exportar TXT tipo Moodle</button>
-            <button id="exportStudentTxtBtn">Exportar TXT por Alumno</button>
+            <button id="exportAlumnosBtn">Lista de Alumnos</button>
+            <button id="exportGiftTxtBtn">Exportar Banco Moodle (TXT)</button>
+            <button id="exportStudentTxtBtn">Exportar ZIP por Alumno</button>
+            <button id="clearBtn">Limpiar Todo</button>
+        </section>
 
-        </div>
-
-        <div class="item">
-            <textarea id="output" placeholder="Aquí aparecerá el texto..."
-                style="width: 900px; height: 600px;"></textarea>
-        </div>
+        <main class="output-container">
+            <textarea id="output" placeholder="El texto procesado aparecerá aquí..." spellcheck="false"></textarea>
+        </main>
 
     </div>
-    <!-- Librería Mammoth -->
+
+    <!-- Librerías Externas -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -44,7 +48,7 @@
 
     <script>
         document.getElementById("fileInput").addEventListener("change", function () {
-            const fileName = this.files[0]?.name || "";
+            const fileName = this.files[0]?.name || "Ningún archivo seleccionado";
             document.getElementById("fileName").textContent = fileName;
         });
     </script>
