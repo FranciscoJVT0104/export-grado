@@ -1045,3 +1045,4 @@ if (dropZone) {
         fileInput.click();
     });
 }
+

@@ -418,6 +418,10 @@ textarea::-webkit-scrollbar-thumb:hover {
     line-height: 1.4;
 }
 
+.status-banner svg {
+    flex-shrink: 0;
+}
+
 .status-banner.success {
     background: rgba(16, 185, 129, 0.08);
     border: 1px solid rgba(16, 185, 129, 0.25);
