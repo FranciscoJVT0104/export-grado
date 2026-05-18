@@ -12,32 +12,54 @@
 <body>
 
     <div class="container">
-        <header class="header-section">
-            <h1>TRANSFORMADOR DE EXÁMENES DE GRADO</h1>
-            
-            <div class="file-input-wrapper">
-                <input type="file" id="fileInput" accept=".docx,.txt,.xlsx" hidden>
-                <label for="fileInput" class="file-label" id="fileBtn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    Seleccionar Archivo
-                </label>
-                <span id="fileName">Ningún archivo seleccionado</span>
-            </div>
-        </header>
+        <div class="app-layout">
+            <!-- Panel de Control Izquierdo -->
+            <aside class="control-panel">
+                <header class="header-section">
+                    <h1>TRANSFORMADOR DE EXÁMENES DE GRADO</h1>
+                    
+                    <div class="drop-zone" id="dropZone">
+                        <div class="drop-zone-content" id="dropZoneContent">
+                            <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            <span class="drop-zone-text">Arrastra tu examen aquí o <span class="highlight-text">selecciona un archivo</span></span>
+                            <span class="drop-zone-subtext">Soporta formatos DOCX, TXT y XLSX</span>
+                        </div>
+                        <input type="file" id="fileInput" accept=".docx,.txt,.xlsx" hidden>
+                    </div>
+                    <span id="fileName" class="file-name-badge" style="display: none;">Ningún archivo seleccionado</span>
+                </header>
 
-        <section class="actions-grid">
-            <button id="exportBtn">Exportar a TXT</button>
-            <button id="exportExcelBtn">Exportar a Excel</button>
-            <button id="exportAlumnosBtn">Lista de Alumnos</button>
-            <button id="exportGiftTxtBtn">Exportar Banco Moodle (TXT)</button>
-            <button id="exportStudentTxtBtn">Exportar ZIP por Alumno</button>
-            <button id="clearBtn">Limpiar Todo</button>
-        </section>
+                <section class="actions-grid">
+                    <button id="exportBtn">Exportar a TXT</button>
+                    <button id="exportExcelBtn">Exportar a Excel</button>
+                    <button id="exportAlumnosBtn">Lista de Alumnos</button>
+                    <button id="exportGiftTxtBtn">Exportar Banco Moodle (TXT)</button>
+                    <button id="exportStudentTxtBtn">Exportar ZIP por Alumno</button>
+                    <button id="clearBtn">Limpiar Todo</button>
+                </section>
 
-        <main class="output-container">
-            <textarea id="output" placeholder="El texto procesado aparecerá aquí..." spellcheck="false"></textarea>
-        </main>
+                <!-- Panel de Análisis de Estructura de Alternativas (Oculto inicialmente) -->
+                <section id="analysisPanel" class="analysis-panel" style="display: none;"></section>
+            </aside>
 
+            <!-- Panel de Vista Previa Derecho -->
+            <main class="preview-panel">
+                <div class="preview-header">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    <span>Vista del Examen Procesado</span>
+                </div>
+                <div class="output-container">
+                    <textarea id="output" placeholder="El texto procesado aparecerá aquí..." spellcheck="false" readonly></textarea>
+                </div>
+            </main>
+        </div>
     </div>
 
     <!-- Librerías Externas -->
@@ -46,12 +68,7 @@
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="script.js"></script>
 
-    <script>
-        document.getElementById("fileInput").addEventListener("change", function () {
-            const fileName = this.files[0]?.name || "Ningún archivo seleccionado";
-            document.getElementById("fileName").textContent = fileName;
-        });
-    </script>
+
 </body>
 
 </html>

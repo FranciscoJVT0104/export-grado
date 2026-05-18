@@ -105,14 +105,9 @@ fileInput.addEventListener("click", function () {
 });
 
 fileInput.addEventListener("change", function () {
-    const file = this.files[0];
-    if (!file) return;
-
-    const ext = file.name.split(".").pop().toLowerCase();
-    if (ext === "docx") leerWord(file);
-    else if (ext === "txt") leerTXT(file);
-    else if (ext === "xlsx") leerExcel(file);
-    else alert("Formato no soportado");
+    if (this.files[0]) {
+        procesarArchivo(this.files[0]);
+    }
 });
 
 function leerWord(file) {
@@ -124,7 +119,16 @@ function leerWord(file) {
                 datosExcelCargado = null;
                 textoProcesadoTXT = procesarTextoTXT(textoOriginal);
                 output.value = textoProcesadoTXT;
+                ejecutarAnalisis();
+            })
+            .catch(err => {
+                alert("Error al leer el archivo Word: " + err.message);
+                restablecerDropZone();
             });
+    };
+    reader.onerror = () => {
+        alert("Error al leer el archivo.");
+        restablecerDropZone();
     };
     reader.readAsArrayBuffer(file);
 }
@@ -136,6 +140,11 @@ function leerTXT(file) {
         datosExcelCargado = null;
         textoProcesadoTXT = procesarTextoTXT(textoOriginal);
         output.value = textoProcesadoTXT;
+        ejecutarAnalisis();
+    };
+    reader.onerror = () => {
+        alert("Error al leer el archivo.");
+        restablecerDropZone();
     };
     reader.readAsText(file, "UTF-8");
 }
@@ -145,26 +154,37 @@ function leerExcel(file) {
     const reader = new FileReader();
 
     reader.onload = e => {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: "array" });
-        const hoja = workbook.Sheets[workbook.SheetNames[0]];
-        const filas = XLSX.utils.sheet_to_json(hoja, {
-            header: 1,
-            defval: "",
-            blankrows: false
-        });
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: "array" });
+            const hoja = workbook.Sheets[workbook.SheetNames[0]];
+            const filas = XLSX.utils.sheet_to_json(hoja, {
+                header: 1,
+                defval: "",
+                blankrows: false
+            });
 
-        const parseado = parsearExcelExamen(filas);
+            const parseado = parsearExcelExamen(filas);
 
-        if (!parseado.grupos.length || !parseado.grupos.some(g => g.preguntas.length)) {
-            alert("El Excel no tiene el formato esperado.");
-            return;
+            if (!parseado.grupos.length || !parseado.grupos.some(g => g.preguntas.length)) {
+                alert("El Excel no tiene el formato esperado.");
+                restablecerDropZone();
+                return;
+            }
+
+            datosExcelCargado = parseado;
+            textoOriginal = "";
+            textoProcesadoTXT = "";
+            output.value = renderVistaExcel(parseado);
+            ejecutarAnalisis();
+        } catch (err) {
+            alert("Error al procesar el Excel: " + err.message);
+            restablecerDropZone();
         }
-
-        datosExcelCargado = parseado;
-        textoOriginal = "";
-        textoProcesadoTXT = "";
-        output.value = renderVistaExcel(parseado);
+    };
+    reader.onerror = () => {
+        alert("Error al leer el archivo.");
+        restablecerDropZone();
     };
 
     reader.readAsArrayBuffer(file);
@@ -619,11 +639,10 @@ let limpio = normalizarAlternativa(o).replace(/^[a-e]\)\s*/i, "");
 ================================ */
 clearBtn.addEventListener("click", () => {
     output.value = "";
-    fileInput.value = "";
-    document.getElementById("fileName").textContent = "";
     textoOriginal = "";
     textoProcesadoTXT = "";
     datosExcelCargado = null;
+    restablecerDropZone();
 });
 
 /* ===============================
@@ -764,4 +783,265 @@ exportStudentTxtBtn.addEventListener("click", async () => {
 
     await descargarCarpetaAlumnos(grupos);
 });
+
+/* ===============================
+   DRAG AND DROP & ANÁLISIS DE CALIDAD
+================================ */
+
+function procesarArchivo(file) {
+    if (!file) return;
+
+    // Actualizar nombre del archivo
+    const fileNameElement = document.getElementById("fileName");
+    fileNameElement.textContent = file.name;
+    fileNameElement.style.display = "inline-flex";
+
+    // Actualizar estado del drop zone
+    const dropZone = document.getElementById("dropZone");
+    dropZone.classList.add("has-file");
+
+    const dropZoneContent = document.getElementById("dropZoneContent");
+    dropZoneContent.innerHTML = `
+        <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        <span class="drop-zone-text">¡Archivo cargado con éxito!</span>
+        <span class="drop-zone-subtext">${file.name}</span>
+    `;
+
+    const ext = file.name.split(".").pop().toLowerCase();
+    if (ext === "docx") leerWord(file);
+    else if (ext === "txt") leerTXT(file);
+    else if (ext === "xlsx") leerExcel(file);
+    else {
+        alert("Formato no soportado. Por favor, sube un archivo .docx, .txt o .xlsx");
+        restablecerDropZone();
+    }
+}
+
+function restablecerDropZone() {
+    const dropZone = document.getElementById("dropZone");
+    if (dropZone) {
+        dropZone.className = "drop-zone";
+    }
+    
+    const dropZoneContent = document.getElementById("dropZoneContent");
+    if (dropZoneContent) {
+        dropZoneContent.innerHTML = `
+            <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <span class="drop-zone-text">Arrastra tu examen aquí o <span class="highlight-text">selecciona un archivo</span></span>
+            <span class="drop-zone-subtext">Soporta formatos DOCX, TXT y XLSX</span>
+        `;
+    }
+    
+    const fileNameElement = document.getElementById("fileName");
+    if (fileNameElement) {
+        fileNameElement.textContent = "Ningún archivo seleccionado";
+        fileNameElement.style.display = "none";
+    }
+    
+    if (fileInput) {
+        fileInput.value = "";
+    }
+    
+    // Ocultar panel de análisis
+    renderizarAnalisisDashboard(null);
+}
+
+function ejecutarAnalisis() {
+    let grupos = [];
+    if (datosExcelCargado && datosExcelCargado.grupos) {
+        grupos = datosExcelCargado.grupos;
+    } else if (textoOriginal) {
+        grupos = extraerGruposDesdeTexto(textoOriginal);
+    }
+
+    const resultado = analizarEstructuraPreguntas(grupos);
+    renderizarAnalisisDashboard(resultado);
+}
+
+function analizarEstructuraPreguntas(grupos) {
+    if (!grupos || !grupos.length) return null;
+
+    let totalAlumnos = grupos.length;
+    let totalPreguntas = 0;
+    let advertenciasMapa = new Map();
+
+    grupos.forEach(grupo => {
+        const alumnoNombre = grupo.alumno ? (grupo.alumno.nombre || "Desconocido") : "Desconocido";
+        const preguntas = grupo.preguntas || [];
+        preguntas.forEach((pregunta, idx) => {
+            totalPreguntas++;
+            const numAlternativas = pregunta.opciones ? pregunta.opciones.length : 0;
+            if (numAlternativas !== 5) {
+                const numeroPregunta = idx + 1;
+                const textoPregunta = pregunta.texto || "Sin enunciado";
+                
+                // Generar una clave única combinando el número de pregunta y el texto normalizado
+                const key = `${numeroPregunta}_${textoPregunta.trim().toUpperCase().replace(/\s+/g, " ")}`;
+                
+                if (advertenciasMapa.has(key)) {
+                    const advExistente = advertenciasMapa.get(key);
+                    if (!advExistente.alumnos.includes(alumnoNombre)) {
+                        advExistente.alumnos.push(alumnoNombre);
+                    }
+                } else {
+                    advertenciasMapa.set(key, {
+                        alumnos: [alumnoNombre],
+                        numeroPregunta: numeroPregunta,
+                        textoPregunta: textoPregunta,
+                        cantidadAlternativas: numAlternativas
+                    });
+                }
+            }
+        });
+    });
+
+    const advertencias = Array.from(advertenciasMapa.values()).map(adv => ({
+        alumno: adv.alumnos.join(" / "),
+        numeroPregunta: adv.numeroPregunta,
+        textoPregunta: adv.textoPregunta,
+        cantidadAlternativas: adv.cantidadAlternativas
+    }));
+
+    return {
+        totalAlumnos,
+        totalPreguntas,
+        advertencias
+    };
+}
+
+function renderizarAnalisisDashboard(resultado) {
+    const panel = document.getElementById("analysisPanel");
+    if (!panel) return;
+    
+    if (!resultado) {
+        panel.style.display = "none";
+        panel.innerHTML = "";
+        return;
+    }
+
+    panel.style.display = "block";
+    
+    const totalAlumnos = resultado.totalAlumnos;
+    const totalPreguntas = resultado.totalPreguntas;
+    const numAdvertencias = resultado.advertencias.length;
+
+    let statusHtml = "";
+    if (numAdvertencias === 0) {
+        statusHtml = `
+            <div class="status-banner success">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                    <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                <span><strong>¡Estructura Correcta!</strong> Todas las preguntas de los exámenes cargados contienen exactamente las 5 alternativas reglamentarias (a-e).</span>
+            </div>
+        `;
+    } else {
+        statusHtml = `
+            <div class="status-banner warning">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+                <span><strong>Atención:</strong> Se detectaron <strong>${numAdvertencias}</strong> preguntas que no cumplen con las 5 alternativas requeridas (a-e). Por favor, verifica el listado a continuación.</span>
+            </div>
+        `;
+    }
+
+    let warningListHtml = "";
+    if (numAdvertencias > 0) {
+        warningListHtml = `
+            <div class="warning-list-container">
+                <div class="warning-list-title">Detalle de Inconsistencias de Alternativas:</div>
+                <div class="warning-list">
+                    ${resultado.advertencias.map(adv => `
+                        <div class="warning-item">
+                            <div class="warning-header">
+                                <span class="warning-student">${adv.alumno}</span>
+                                <span class="warning-badge">${adv.cantidadAlternativas} alternativas</span>
+                            </div>
+                            <div class="warning-desc">Pregunta ${adv.numeroPregunta}: "${adv.textoPregunta}"</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    panel.innerHTML = `
+        <div class="analysis-header-title">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            Análisis de Calidad y Alternativas del Examen
+        </div>
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <span class="kpi-title">Total Alumnos</span>
+                <span class="kpi-value">${totalAlumnos}</span>
+            </div>
+            <div class="kpi-card">
+                <span class="kpi-title">Total Preguntas</span>
+                <span class="kpi-value">${totalPreguntas}</span>
+            </div>
+            <div class="kpi-card ${numAdvertencias > 0 ? 'warning-active' : ''}">
+                <span class="kpi-title">Advertencias (≠ 5 Alts)</span>
+                <span class="kpi-value">${numAdvertencias}</span>
+            </div>
+        </div>
+        ${statusHtml}
+        ${warningListHtml}
+    `;
+}
+
+// Configuración de Eventos de Arrastrar y Soltar (Drag & Drop)
+const dropZone = document.getElementById("dropZone");
+
+if (dropZone) {
+    // Evitar comportamientos por defecto para drag & drop
+    ["dragenter", "dragover", "dragleave", "drop"].forEach(eventName => {
+        window.addEventListener(eventName, e => e.preventDefault(), false);
+        dropZone.addEventListener(eventName, e => e.preventDefault(), false);
+    });
+
+    // Resaltar la zona de drop al arrastrar archivo encima
+    ["dragenter", "dragover"].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => {
+            dropZone.classList.add("drag-over");
+        }, false);
+    });
+
+    ["dragleave", "dragend"].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => {
+            dropZone.classList.remove("drag-over");
+        }, false);
+    });
+
+    // Capturar el archivo soltado
+    dropZone.addEventListener("drop", e => {
+        dropZone.classList.remove("drag-over");
+        const dt = e.dataTransfer;
+        const file = dt.files[0];
+        if (file) {
+            procesarArchivo(file);
+        }
+    });
+
+    // Clic en la zona de drop abre el explorador de archivos nativo
+    dropZone.addEventListener("click", () => {
+        fileInput.click();
+    });
+}
 
