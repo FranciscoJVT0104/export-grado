@@ -836,7 +836,7 @@ function restablecerDropZone() {
                 <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
             <span class="drop-zone-text">Arrastra tu examen aquí o <span class="highlight-text">selecciona un archivo</span></span>
-            <span class="drop-zone-subtext">Soporta formatos DOCX, TXT y XLSX</span>
+            <span class="drop-zone-subtext">Soporta formatos DOCX y TXT</span>
         `;
     }
 
@@ -863,7 +863,7 @@ function ejecutarAnalisis() {
     }
 
     const resultado = analizarEstructuraPreguntas(grupos);
-    renderizarAnalisisDashboard(resultado);
+    renderizarAnalisisDashboard(resultado || { totalAlumnos: 0, totalPreguntas: 0, advertencias: [] });
 }
 
 function analizarEstructuraPreguntas(grupos) {
