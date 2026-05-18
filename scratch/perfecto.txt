@@ -1,0 +1,15 @@
+ALUMNOS: JUAN PÉREZ
+
+1. ¿Cuál es la capital de Francia?
+a) París.
+b) Londres.
+c) Madrid.
+d) Roma.
+e) Berlín.
+
+2. ¿Cuál es el río más largo del mundo?
+a) Amazonas.
+b) Nilo.
+c) Misisipi.
+d) Yangtsé.
+e) Danubio.
