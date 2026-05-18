@@ -934,7 +934,18 @@ function renderizarAnalisisDashboard(resultado) {
     const numAdvertencias = resultado.advertencias.length;
 
     let statusHtml = "";
-    if (numAdvertencias === 0) {
+    if (totalPreguntas === 0) {
+        statusHtml = `
+            <div class="status-banner error">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span><strong>Error de Análisis:</strong> No se detectaron preguntas en el archivo cargado. Verifica que el archivo no esté vacío y que las preguntas sigan el formato correcto (ej. "1. ¿Enunciado?").</span>
+            </div>
+        `;
+    } else if (numAdvertencias === 0) {
         statusHtml = `
             <div class="status-banner success">
                 <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -993,11 +1004,11 @@ function renderizarAnalisisDashboard(resultado) {
                 <span class="kpi-title">Total Alumnos</span>
                 <span class="kpi-value">${totalAlumnos}</span>
             </div>
-            <div class="kpi-card">
+            <div class="kpi-card ${totalPreguntas === 0 ? 'error-active' : ''}">
                 <span class="kpi-title">Total Preguntas</span>
                 <span class="kpi-value">${totalPreguntas}</span>
             </div>
-            <div class="kpi-card ${numAdvertencias > 0 ? 'warning-active' : ''}">
+            <div class="kpi-card ${numAdvertencias > 0 && totalPreguntas > 0 ? 'warning-active' : ''}">
                 <span class="kpi-title">Advertencias (≠ 5 Alts)</span>
                 <span class="kpi-value">${numAdvertencias}</span>
             </div>

@@ -406,6 +406,22 @@ textarea::-webkit-scrollbar-thumb:hover {
     -webkit-text-fill-color: transparent;
 }
 
+.kpi-card.error-active {
+    border-color: rgba(239, 68, 68, 0.25);
+    background: rgba(239, 68, 68, 0.02);
+}
+
+.kpi-card.error-active:hover {
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.04);
+}
+
+.kpi-card.error-active .kpi-value {
+    background: linear-gradient(135deg, #fca5a5 0%, #ef4444 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
 .status-banner {
     display: flex;
     align-items: center;
@@ -434,6 +450,13 @@ textarea::-webkit-scrollbar-thumb:hover {
     border: 1px solid rgba(245, 158, 11, 0.25);
     color: #fbbf24;
     box-shadow: 0 0 15px rgba(245, 158, 11, 0.05);
+}
+
+.status-banner.error {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #f87171;
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.05);
 }
 
 .warning-list-container {
