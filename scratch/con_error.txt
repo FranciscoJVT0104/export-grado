@@ -1,0 +1,14 @@
+ALUMNOS: MARÍA GÓMEZ
+
+1. ¿Cuál es el océano más grande del mundo?
+a) Atlántico.
+b) Pacífico.
+c) Índico.
+d) Ártico.
+
+2. ¿Cuál es el planeta más cercano al Sol?
+a) Mercurio.
+b) Venus.
+c) Tierra.
+d) Marte.
+e) Júpiter.
