@@ -252,7 +252,8 @@ function renderVistaExcel(datos) {
             pregunta.opciones.forEach((op, opIndex) => {
                 const textoOpcion = op.replace(/^[=~]\s*/, "").trim();
                 const letra = String.fromCharCode(97 + opIndex);
-                bloque += `${letra}) ${textoOpcion}\n`;            });
+                bloque += `${letra}) ${textoOpcion}\n`;
+            });
 
             bloque += "\n";
         });
@@ -517,7 +518,7 @@ function procesarTextoTXT(texto) {
                 textoPreguntaLines.push(lineas[i]);
                 i++;
             }
-            
+
             r.push(`${n}. ${normalizarPregunta(textoPreguntaLines.join(" "))}`);
 
             // Luego recolectamos las opciones, deteniéndonos si empieza otro examen o pregunta
@@ -570,8 +571,8 @@ function procesarTextoExcel(texto) {
         preguntas.forEach(p => {
             filas.push([`::e_${p.num}::${p.texto}{`]);
             p.opciones.forEach((o, i) => {
-let limpio = normalizarAlternativa(o).replace(/^[a-e]\)\s*/i, "");
-               filas.push([(i === 0 ? "=" : "~") + limpio]);
+                let limpio = normalizarAlternativa(o).replace(/^[a-e]\)\s*/i, "");
+                filas.push([(i === 0 ? "=" : "~") + limpio]);
             });
             filas.push(["}"]);
             filas.push([""]);
@@ -615,10 +616,10 @@ let limpio = normalizarAlternativa(o).replace(/^[a-e]\)\s*/i, "");
                 textoPreguntaLines.push(l[i]);
                 i++;
             }
-            
+
             let textoCompleto = normalizarPregunta(textoPreguntaLines.join(" "));
             let ops = [];
-            
+
             while (i < l.length && !esPregunta(l[i]) && !esEncabezadoAlumnos(l[i])) {
                 if (esOpcion(l[i])) ops.push(l[i]);
                 i++;
@@ -825,7 +826,7 @@ function restablecerDropZone() {
     if (dropZone) {
         dropZone.className = "drop-zone";
     }
-    
+
     const dropZoneContent = document.getElementById("dropZoneContent");
     if (dropZoneContent) {
         dropZoneContent.innerHTML = `
@@ -838,17 +839,17 @@ function restablecerDropZone() {
             <span class="drop-zone-subtext">Soporta formatos DOCX, TXT y XLSX</span>
         `;
     }
-    
+
     const fileNameElement = document.getElementById("fileName");
     if (fileNameElement) {
         fileNameElement.textContent = "Ningún archivo seleccionado";
         fileNameElement.style.display = "none";
     }
-    
+
     if (fileInput) {
         fileInput.value = "";
     }
-    
+
     // Ocultar panel de análisis
     renderizarAnalisisDashboard(null);
 }
@@ -881,10 +882,10 @@ function analizarEstructuraPreguntas(grupos) {
             if (numAlternativas !== 5) {
                 const numeroPregunta = idx + 1;
                 const textoPregunta = pregunta.texto || "Sin enunciado";
-                
+
                 // Generar una clave única combinando el número de pregunta y el texto normalizado
                 const key = `${numeroPregunta}_${textoPregunta.trim().toUpperCase().replace(/\s+/g, " ")}`;
-                
+
                 if (advertenciasMapa.has(key)) {
                     const advExistente = advertenciasMapa.get(key);
                     if (!advExistente.alumnos.includes(alumnoNombre)) {
@@ -919,7 +920,7 @@ function analizarEstructuraPreguntas(grupos) {
 function renderizarAnalisisDashboard(resultado) {
     const panel = document.getElementById("analysisPanel");
     if (!panel) return;
-    
+
     if (!resultado) {
         panel.style.display = "none";
         panel.innerHTML = "";
@@ -927,7 +928,7 @@ function renderizarAnalisisDashboard(resultado) {
     }
 
     panel.style.display = "block";
-    
+
     const totalAlumnos = resultado.totalAlumnos;
     const totalPreguntas = resultado.totalPreguntas;
     const numAdvertencias = resultado.advertencias.length;
@@ -936,7 +937,7 @@ function renderizarAnalisisDashboard(resultado) {
     if (numAdvertencias === 0) {
         statusHtml = `
             <div class="status-banner success">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                     <polyline points="22 4 12 14.01 9 11.01"/>
                 </svg>
@@ -985,7 +986,7 @@ function renderizarAnalisisDashboard(resultado) {
                 <line x1="16" y1="17" x2="8" y2="17"/>
                 <polyline points="10 9 9 9 8 9"/>
             </svg>
-            Análisis de Calidad y Alternativas del Examen
+            Análisis de Calidad del Examen
         </div>
         <div class="kpi-grid">
             <div class="kpi-card">
@@ -1044,4 +1045,3 @@ if (dropZone) {
         fileInput.click();
     });
 }
-
