@@ -362,7 +362,7 @@ function extraerGruposDesdeTexto(texto) {
             let alumnosGrupo = [];
 
             let nombreInline = limpiarNombreAlumno(lineas[i]);
-            if (nombreInline) alumnosGrupo.push(nombreInline);
+            separarAlumnosPorSlash(nombreInline).forEach(n => alumnosGrupo.push(nombreEnMayusculas(n)));
 
             i++;
 
@@ -374,7 +374,7 @@ function extraerGruposDesdeTexto(texto) {
             ) {
 
                 let nombre = limpiarNombreAlumno(lineas[i]);
-                if (nombre) alumnosGrupo.push(nombre);
+                separarAlumnosPorSlash(nombre).forEach(n => alumnosGrupo.push(nombreEnMayusculas(n)));
 
                 i++;
             }
@@ -485,7 +485,7 @@ function procesarTextoTXT(texto) {
             n = 1;
 
             let nombre = limpiarNombreAlumno(l);
-            if (nombre) r.push(nombreEnMayusculas(nombre));
+            separarAlumnosPorSlash(nombre).forEach(alumno => r.push(nombreEnMayusculas(alumno)));
 
             i++;
             while (
@@ -493,9 +493,9 @@ function procesarTextoTXT(texto) {
                 !/^TEMA/i.test(lineas[i]) &&
                 !esEncabezadoAlumnos(lineas[i]) &&
                 !esPregunta(lineas[i])
-            ) {
-                let x = limpiarNombreAlumno(lineas[i]);
-                if (x) r.push(nombreEnMayusculas(x));
+            ) { // Corregido: Usar 'alumno' en lugar de 'n' para evitar confusión con 'n' de número de pregunta
+                let alumnoEnLinea = limpiarNombreAlumno(lineas[i]);
+                separarAlumnosPorSlash(alumnoEnLinea).forEach(alumno => r.push(nombreEnMayusculas(alumno)));
                 i++;
             }
             continue;
@@ -589,7 +589,7 @@ function procesarTextoExcel(texto) {
             cerrar();
 
             let nombre = limpiarNombreAlumno(l[i]);
-            if (nombre) alumnos.push(nombreEnMayusculas(nombre));
+            separarAlumnosPorSlash(nombre).forEach(alumno => alumnos.push(nombreEnMayusculas(alumno)));
 
             i++;
             while (
@@ -597,9 +597,9 @@ function procesarTextoExcel(texto) {
                 !/^TEMA/i.test(l[i]) &&
                 !esEncabezadoAlumnos(l[i]) &&
                 !esPregunta(l[i])
-            ) {
-                let x = limpiarNombreAlumno(l[i]);
-                if (x) alumnos.push(nombreEnMayusculas(x));
+            ) { // Corregido: Usar 'alumnoEnLinea' en lugar de 'x'
+                let alumnoEnLinea = limpiarNombreAlumno(l[i]);
+                separarAlumnosPorSlash(alumnoEnLinea).forEach(alumno => alumnos.push(nombreEnMayusculas(alumno)));
                 i++;
             }
             continue;
@@ -669,6 +669,29 @@ function limpiarNombreAlumno(texto) {
     return nombreEnMayusculas(limpio);
 }
 
+/**
+ * Separa una cadena de nombre(s) de alumno por el caracter "/".
+ * Ejemplo: "PACHECO PADILLA MADELEYNE LUZ / LOPEZ LOPEZ MEDALIT"
+ *   → ["PACHECO PADILLA MADELEYNE LUZ", "LOPEZ LOPEZ MEDALIT"]
+ * Si no contiene "/", retorna un array con el nombre original (si no está vacío).
+ */
+function separarAlumnosPorSlash(nombreLimpio) {
+    if (!nombreLimpio) return [];
+
+    // Separar por "/" y limpiar cada parte
+    const partes = nombreLimpio.split(/\s*\/\s*/);
+    const resultados = [];
+
+    for (const parte of partes) {
+        const nombre = nombreEnMayusculas(parte.trim());
+        if (nombre) {
+            resultados.push(nombre);
+        }
+    }
+
+    return resultados;
+}
+
 exportAlumnosBtn.addEventListener("click", () => {
 
     if (!textoOriginal) {
@@ -687,7 +710,7 @@ exportAlumnosBtn.addEventListener("click", () => {
             // alumno en la misma línea
             let nombre = limpiarNombreAlumno(lineas[i]);
 
-            if (nombre) alumnos.push(nombre);
+            separarAlumnosPorSlash(nombre).forEach(alumno => alumnos.push(alumno));
 
             i++;
 
@@ -701,7 +724,7 @@ exportAlumnosBtn.addEventListener("click", () => {
 
                 let alumno = limpiarNombreAlumno(lineas[i]);
 
-                if (alumno) alumnos.push(alumno);
+                separarAlumnosPorSlash(alumno).forEach(alumnoSeparado => alumnos.push(alumnoSeparado));
 
                 i++;
             }
@@ -866,6 +889,153 @@ function ejecutarAnalisis() {
     renderizarAnalisisDashboard(resultado || { totalAlumnos: 0, totalPreguntas: 0, advertencias: [] });
 }
 
+/* ===============================
+   DETECCIÓN DE DUPLICADOS
+================================ */
+
+/**
+ * Normaliza un texto para comparación: minúsculas, sin tildes,
+ * sin puntuación final y espacios colapsados.
+ */
+function normalizarTextoComparacion(texto) {
+    return String(texto || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")   // quitar diacríticos
+        .replace(/[¿?¡!.,;:]/g, "")          // quitar signos
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+/**
+ * Detecta:
+ *  1. Preguntas idénticas (enunciado y alternativas iguales) dentro del mismo examen.
+ *  2. Enunciados iguales pero alternativas distintas dentro del mismo examen.
+ *  3. Alternativas duplicadas dentro de una misma pregunta.
+ *
+ *  (Agrupa por huella de examen para tratar varios alumnos del mismo examen como uno solo).
+ *
+ * @param {Array} grupos  - Array de grupos parseados.
+ * @returns {Object} Objetos con las 3 categorías de duplicados.
+ */
+function detectarDuplicados(grupos) {
+    // Huella para agrupar alumnos que comparten el mismo examen
+    function calcularHuella(grupo) {
+        return (grupo.preguntas || [])
+            .map(p => normalizarTextoComparacion(p.texto))
+            .join("|");
+    }
+
+    // Huella para comparar alternativas de una pregunta
+    function obtenerHuellaOpciones(pregunta) {
+        return (pregunta.opciones || [])
+            .map(op => normalizarTextoComparacion(op))
+            .join("##");
+    }
+
+    const examenes = new Map(); // huella -> { alumnos: [], preguntas: [] }
+
+    grupos.forEach(grupo => {
+        const huella = calcularHuella(grupo);
+        if (!huella) return; // omitir grupos vacíos
+        
+        const alumnoNombre = grupo.alumno ? (grupo.alumno.nombre || "Desconocido") : "Desconocido";
+        
+        if (!examenes.has(huella)) {
+            examenes.set(huella, {
+                alumnos: [],
+                preguntas: grupo.preguntas || []
+            });
+        }
+        if (!examenes.get(huella).alumnos.includes(alumnoNombre)) {
+             examenes.get(huella).alumnos.push(alumnoNombre);
+        }
+    });
+
+    const duplicadosPreguntasIdenticas = [];
+    const duplicadosEnunciadosIgualesAltsDistintas = [];
+    const duplicadosAlternativasInternas = [];
+
+    examenes.forEach((exam, huella) => {
+        const alumnosLabel = exam.alumnos.join(" / ");
+
+        // 1. & 2. Preguntas Idénticas y Enunciados Iguales con Alts. Distintas
+        const porPrompt = new Map();
+        exam.preguntas.forEach((p, idx) => {
+            const promptNorm = normalizarTextoComparacion(p.texto);
+            if (!promptNorm) return;
+            if (!porPrompt.has(promptNorm)) {
+                porPrompt.set(promptNorm, []);
+            }
+            porPrompt.get(promptNorm).push({ idx: idx + 1, pregunta: p });
+        });
+
+        porPrompt.forEach((ocurrencias) => {
+            if (ocurrencias.length > 1) {
+                const primeraHuella = obtenerHuellaOpciones(ocurrencias[0].pregunta);
+                const todasIguales = ocurrencias.every(o => obtenerHuellaOpciones(o.pregunta) === primeraHuella);
+
+                if (todasIguales) {
+                    duplicadosPreguntasIdenticas.push({
+                        textoOriginal: ocurrencias[0].pregunta.texto || "Sin enunciado",
+                        alumno: alumnosLabel,
+                        numeros: ocurrencias.map(o => o.idx),
+                        coincidencias: ocurrencias.length
+                    });
+                } else {
+                    duplicadosEnunciadosIgualesAltsDistintas.push({
+                        textoOriginal: ocurrencias[0].pregunta.texto || "Sin enunciado",
+                        alumno: alumnosLabel,
+                        detalles: ocurrencias.map(o => ({
+                            numero: o.idx
+                        })),
+                        coincidencias: ocurrencias.length
+                    });
+                }
+            }
+        });
+
+        // 3. Alternativas duplicadas dentro de una pregunta
+        exam.preguntas.forEach((pregunta, idx) => {
+            const opciones = pregunta.opciones || [];
+            const vistas = new Map();
+            const repetidas = [];
+
+            opciones.forEach((op, opIdx) => {
+                const clave = normalizarTextoComparacion(op);
+                if (!clave) return;
+                if (!vistas.has(clave)) {
+                    vistas.set(clave, []);
+                }
+                vistas.get(clave).push(String.fromCharCode(97 + opIdx).toUpperCase()); // A, B, C...
+            });
+
+            vistas.forEach((letras, clave) => {
+                if (letras.length > 1) {
+                    const originalIndex = opciones.findIndex((o, i) => normalizarTextoComparacion(o) === clave);
+                    const originalText = originalIndex !== -1 ? opciones[originalIndex] : clave;
+                    repetidas.push({ texto: originalText, letras });
+                }
+            });
+
+            if (repetidas.length > 0) {
+                duplicadosAlternativasInternas.push({
+                    alumno: alumnosLabel,
+                    numeroPregunta: idx + 1,
+                    textoPregunta: pregunta.texto || "Sin enunciado",
+                    repetidas // [{ texto, letras: ['A','C'] }]
+                });
+            }
+        });
+    });
+
+    return { 
+        duplicadosPreguntasIdenticas, 
+        duplicadosEnunciadosIgualesAltsDistintas, 
+        duplicadosAlternativasInternas 
+    };
+}
+
 function analizarEstructuraPreguntas(grupos) {
     if (!grupos || !grupos.length) return null;
 
@@ -910,10 +1080,14 @@ function analizarEstructuraPreguntas(grupos) {
         cantidadAlternativas: adv.cantidadAlternativas
     }));
 
+    // Detectar duplicados
+    const duplicados = detectarDuplicados(grupos);
+
     return {
         totalAlumnos,
         totalPreguntas,
-        advertencias
+        advertencias,
+        ...duplicados
     };
 }
 
@@ -932,7 +1106,17 @@ function renderizarAnalisisDashboard(resultado) {
     const totalAlumnos = resultado.totalAlumnos;
     const totalPreguntas = resultado.totalPreguntas;
     const numAdvertencias = resultado.advertencias.length;
+    
+    const dupIden = resultado.duplicadosPreguntasIdenticas || [];
+    const numDupIden = dupIden.length;
+    
+    const dupDif = resultado.duplicadosEnunciadosIgualesAltsDistintas || [];
+    const numDupDif = dupDif.length;
+    
+    const dupAltInt = resultado.duplicadosAlternativasInternas || [];
+    const numDupAltInt = dupAltInt.length;
 
+    // --- Banner de estado de alternativas ---
     let statusHtml = "";
     if (totalPreguntas === 0) {
         statusHtml = `
@@ -968,6 +1152,7 @@ function renderizarAnalisisDashboard(resultado) {
         `;
     }
 
+    // --- Detalle advertencias de alternativas ---
     let warningListHtml = "";
     if (numAdvertencias > 0) {
         warningListHtml = `
@@ -986,6 +1171,96 @@ function renderizarAnalisisDashboard(resultado) {
                 </div>
             </div>
         `;
+    }
+
+    // --- Sección 1: Preguntas Idénticas ---
+    let dupIdenHtml = "";
+    if (numDupIden > 0) {
+        const items = dupIden.map(dp => {
+            const chipsHtml = dp.numeros.map(n =>
+                `<span class="dup-occurrence">Pregunta ${n}</span>`
+            ).join("");
+            return `
+                <div class="dup-item dup-question-item">
+                    <div class="dup-header">
+                        <span class="dup-student">${dp.alumno}</span>
+                        <span class="dup-pregunta-badge">${dp.coincidencias}x idénticas</span>
+                    </div>
+                    <div class="dup-enunciado">&ldquo;${dp.textoOriginal}&rdquo;</div>
+                    <div class="dup-occurrences-wrap">${chipsHtml}</div>
+                </div>`;
+        }).join("");
+
+        dupIdenHtml = `
+            <div class="dup-section">
+                <button class="collapsible-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('collapsed')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+                    Preguntas Idénticas (Enunciado y Alts)
+                    <span class="collapsible-count">${numDupIden}</span>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="dup-list">${items}</div>
+            </div>`;
+    }
+
+    // --- Sección 2: Enunciados Iguales c/ Alts Distintas ---
+    let dupDifHtml = "";
+    if (numDupDif > 0) {
+        const items = dupDif.map(dp => {
+            const chipsHtml = dp.detalles.map(d =>
+                `<span class="dup-occurrence">Pregunta ${d.numero}</span>`
+            ).join("");
+            return `
+                <div class="dup-item dup-question-item">
+                    <div class="dup-header">
+                        <span class="dup-student">${dp.alumno}</span>
+                        <span class="dup-pregunta-badge">${dp.coincidencias}x repetidos (Alts dif.)</span>
+                    </div>
+                    <div class="dup-enunciado">&ldquo;${dp.textoOriginal}&rdquo;</div>
+                    <div class="dup-occurrences-wrap">${chipsHtml}</div>
+                </div>`;
+        }).join("");
+
+        dupDifHtml = `
+            <div class="dup-section">
+                <button class="collapsible-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('collapsed')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    Enunciados Iguales (Alternativas Distintas)
+                    <span class="collapsible-count">${numDupDif}</span>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="dup-list">${items}</div>
+            </div>`;
+    }
+
+    // --- Sección 3: Alternativas duplicadas internas ---
+    let dupAlternativasHtml = "";
+    if (numDupAltInt > 0) {
+        const items = dupAltInt.map(da => {
+            const repHtml = da.repetidas.map(r =>
+                `<span class="dup-alt-badge">Opciones ${r.letras.join(" y ")}: &ldquo;${r.texto}&rdquo;</span>`
+            ).join("");
+            return `
+                <div class="dup-item dup-alt-item">
+                    <div class="dup-header">
+                        <span class="dup-student">${da.alumno}</span>
+                        <span class="dup-pregunta-badge">Pregunta ${da.numeroPregunta}</span>
+                    </div>
+                    <div class="dup-enunciado-small">&ldquo;${da.textoPregunta}&rdquo;</div>
+                    <div class="dup-alts-wrap">${repHtml}</div>
+                </div>`;
+        }).join("");
+
+        dupAlternativasHtml = `
+            <div class="dup-section">
+                <button class="collapsible-toggle collapsible-toggle--alt" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('collapsed')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    Alternativas Duplicadas Internas
+                    <span class="collapsible-count">${numDupAltInt}</span>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="dup-list">${items}</div>
+            </div>`;
     }
 
     panel.innerHTML = `
@@ -1012,9 +1287,24 @@ function renderizarAnalisisDashboard(resultado) {
                 <span class="kpi-title">Advertencias (≠ 5 Alts)</span>
                 <span class="kpi-value">${numAdvertencias}</span>
             </div>
+            <div class="kpi-card ${numDupIden > 0 ? 'duplicate-active' : ''}">
+                <span class="kpi-title">Preguntas Idénticas</span>
+                <span class="kpi-value">${numDupIden}</span>
+            </div>
+            <div class="kpi-card ${numDupDif > 0 ? 'duplicate-active' : ''}">
+                <span class="kpi-title">Enunciados Iguales c/ Alts Dif</span>
+                <span class="kpi-value">${numDupDif}</span>
+            </div>
+            <div class="kpi-card ${numDupAltInt > 0 ? 'duplicate-alt-active' : ''}">
+                <span class="kpi-title">Alternativas Dup. en Preg.</span>
+                <span class="kpi-value">${numDupAltInt}</span>
+            </div>
         </div>
         ${statusHtml}
         ${warningListHtml}
+        ${dupIdenHtml}
+        ${dupDifHtml}
+        ${dupAlternativasHtml}
     `;
 }
 
@@ -1056,4 +1346,3 @@ if (dropZone) {
         fileInput.click();
     });
 }
-
