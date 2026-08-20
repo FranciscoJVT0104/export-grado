@@ -32,32 +32,41 @@ function normalizarLineas(texto) {
 /* ===============================
    DETECTORES
 ================================ */
-const esOpcion = linea => /^[a-eA-E]\s*[\.\)](\s|$)/.test(linea);
-
 const getLetraOpcion = linea => {
-    const match = linea.match(/^([a-eA-E])\s*[\.\)]/);
+    const match = String(linea || "").match(/^\s*[*+•]?\s*\(?\s*([a-eA-E])\s*[\.\)\:\-\/]+(?:\s+|$|(?=[A-Za-zÁÉÍÓÚáéíóúÑñ0-9]))/);
     return match ? match[1].toUpperCase() : null;
 };
 
 const getSeparadorOpcion = linea => {
-    const match = linea.match(/^[a-eA-E]\s*([\.\)])/);
+    const match = String(linea || "").match(/^\s*[*+•]?\s*\(?\s*[a-eA-E]\s*([\.\)\:\-\/]+)/);
     return match ? match[1] : null;
 };
 
-const esAlternativa = linea => /^[a-eA-E]\s*[\.\)](\s|$)/.test(linea);
+const esOpcion = linea => getLetraOpcion(linea) !== null;
+const esAlternativa = linea => getLetraOpcion(linea) !== null;
 
 function normalizarAlternativa(linea) {
-    const match = String(linea || "").trim().match(/^([a-eA-E])\s*[\.\)]\s*(.*)$/);
+    const match = String(linea || "").trim().match(/^\s*[*+•]?\s*\(?\s*([a-eA-E])\s*[\.\)\:\-\/]+\s*(.*)$/);
     if (!match) return String(linea || "").trim();
 
     const letra = match[1].toLowerCase();
     let texto = match[2].trim();
 
+    // Limpiar sufijos de respuestas correctas o marcas adicionales como + o *
+    texto = texto
+        .replace(/\s*[\+\*]\s*$/, "")
+        .replace(/\s*[\(\[]\s*(?:x|v|f|correcta|correcto)\s*[\)\]]\s*$/gi, "")
+        .replace(/[\+\*]+$/, "")
+        .trim();
+
+    // Limpiar prefijos residuales si quedaron guiones o puntos al inicio del texto
+    texto = texto.replace(/^[\:\-\/\.\s]+/, "").trim();
+
     if (texto) {
         // Formato tipo oración: Primera en mayúscula, resto en minúscula
         texto = texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase();
-        // Asegurar que termine en punto
-        if (!texto.endsWith(".")) texto += ".";
+        // Asegurar que termine en un único punto
+        texto = texto.replace(/\.+$|\s+$/, "") + ".";
     }
 
     return `${letra}) ${texto}`.trim();
@@ -65,16 +74,40 @@ function normalizarAlternativa(linea) {
 
 const limpiarNumeroPregunta = linea =>
     linea
-        .replace(/^\d+[\).:-]?\s*/, "")
+        .replace(/^\s*(?:PREGUNTA\s+)?\d+[\.\)\:\-\?]*\s*/i, "")
         .trim();
 
 const esPregunta = (linea) => {
-    return /^\d+\./.test(linea);
+    return /^\s*(?:PREGUNTA\s+)?\d+(?:[\.\)\:\-\?]+|\s*¿|\s+(?:¿|cuál|cual|qué|que|quién|quien|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|indique|marque|señale|respecto|determinar|según))/i.test(linea);
 };
 
-const RE_ENCABEZADO_ALUMNOS = /^(ALUMNOS\s*\(AS\)|ALUMNOS?\s*\(A\)|ALUMNOS\s+\(AS\)|APELLIDOS\s+Y\s+NOMBRES|ALUMNOS|ALUMNA|ALUMNO)\s*[:\-\s]*/i;
+const RE_ENCABEZADO_ALUMNOS = /^(ALUMNOS?\s*\(AS?\)|ALUMNOS?\s*\(A\)|ALUMNOS\s+\(AS\)|APELLIDOS\s+Y\s+NOMBRES|ALUMNOS?|ALUMNAS?|ESTUDIANTES?\s*\(AS?\)|ESTUDIANTES?|INTEGRANTES?|POSTULANTES?)\s*[:\-\s]*/i;
 
-const esEncabezadoAlumnos = linea => RE_ENCABEZADO_ALUMNOS.test(linea);
+const RE_TITULOS_IGNORAR = /^(EXAMEN|EVALUACI[ÓO]N|CUESTIONARIO|BANCO|PRUEBA|TEST|UNIVERSIDAD|FACULTAD|ESCUELA|CARRERA|DEPARTAMENTO|MODALIDAD|TRABAJO|TITULACI[ÓO]N|SUFICIENCIA|APLICACI[ÓO]N|PROFESIONAL|GRADO|EXTRAORDINARIO|SUSTITUTORIO|PARCIAL|FINAL|CASO|ASIGNATURA|CURSO|DOCENTE|PROFESOR|TUTOR|JURADO|SEDE|FECHA|SECCI[ÓO]N|GRUPO|BLOQUE|MÓDULO|MODULO|PÁGINA|PAGINA|INSTRUCCIONES)\b/i;
+
+function esEncabezadoAlumnos(linea, lineas, index) {
+    if (!linea) return false;
+    const str = linea.trim();
+
+    // 1. Si coincide con la etiqueta explícita (ej. "Alumno: ...", "ALUMNOS: ...")
+    if (RE_ENCABEZADO_ALUMNOS.test(str)) return true;
+
+    // 2. Descartar si es Tema, Pregunta u Opción
+    if (/^TEMA/i.test(str) || esPregunta(str) || esOpcion(str)) return false;
+
+    // 3. Si es un nombre implícito (sin etiqueta), debe preceder a "TEMA:" en las siguientes 3 líneas
+    // Y no debe ser un título genérico ni instrucción
+    if (Array.isArray(lineas) && typeof index === 'number') {
+        for (let k = index + 1; k < Math.min(lineas.length, index + 4); k++) {
+            if (/^TEMA/i.test(lineas[k])) {
+                const palabras = str.split(/\s+/);
+                const esTituloGenerico = RE_TITULOS_IGNORAR.test(str);
+                return !esTituloGenerico && palabras.length >= 2 && palabras.length <= 6;
+            }
+        }
+    }
+    return false;
+}
 
 function nombreEnMayusculas(nombre) {
     return String(nombre || "").trim().toUpperCase();
@@ -357,7 +390,7 @@ function extraerGruposDesdeTexto(texto) {
 
     while (i < lineas.length) {
 
-        if (esEncabezadoAlumnos(lineas[i])) {
+        if (esEncabezadoAlumnos(lineas[i], lineas, i)) {
 
             let alumnosGrupo = [];
 
@@ -369,12 +402,13 @@ function extraerGruposDesdeTexto(texto) {
             while (
                 i < lineas.length &&
                 !/^TEMA/i.test(lineas[i]) &&
-                !esEncabezadoAlumnos(lineas[i]) &&
                 !esPregunta(lineas[i])
             ) {
 
                 let nombre = limpiarNombreAlumno(lineas[i]);
-                separarAlumnosPorSlash(nombre).forEach(n => alumnosGrupo.push(nombreEnMayusculas(n)));
+                if (nombre) {
+                    separarAlumnosPorSlash(nombre).forEach(n => alumnosGrupo.push(nombreEnMayusculas(n)));
+                }
 
                 i++;
             }
@@ -383,7 +417,7 @@ function extraerGruposDesdeTexto(texto) {
 
             while (i < lineas.length) {
 
-                if (esEncabezadoAlumnos(lineas[i])) break;
+                if (esEncabezadoAlumnos(lineas[i], lineas, i)) break;
 
                 if (esPregunta(lineas[i])) {
                     let textoPreguntaLines = [limpiarNumeroPregunta(lineas[i])];
@@ -392,7 +426,7 @@ function extraerGruposDesdeTexto(texto) {
                     while (
                         i < lineas.length &&
                         !esPregunta(lineas[i]) &&
-                        !esEncabezadoAlumnos(lineas[i])
+                        !esEncabezadoAlumnos(lineas[i], lineas, i)
                     ) {
                         let letra = getLetraOpcion(lineas[i]);
                         if (letra === 'A') break;
@@ -406,7 +440,7 @@ function extraerGruposDesdeTexto(texto) {
                     while (
                         i < lineas.length &&
                         !esPregunta(lineas[i]) &&
-                        !esEncabezadoAlumnos(lineas[i])
+                        !esEncabezadoAlumnos(lineas[i], lineas, i)
                     ) {
                         if (esAlternativa(lineas[i])) {
                             let opcion = normalizarAlternativa(lineas[i])
@@ -414,9 +448,25 @@ function extraerGruposDesdeTexto(texto) {
                                 .trim();
 
                             if (opcion) opciones.push(opcion);
-                        }
+                            i++;
+                        } else if (opciones.length > 0) {
+                            let idx = opciones.length - 1;
+                            let previo = opciones[idx].replace(/\.$/, "");
+                            let cont = lineas[i].trim()
+                                .replace(/\s*[\+\*]\s*$/, "")
+                                .replace(/\s*[\(\[]\s*(?:x|v|f|correcta|correcto)\s*[\)\]]\s*$/gi, "")
+                                .trim();
 
-                        i++;
+                            if (cont) {
+                                let unido = `${previo} ${cont}`.trim();
+                                unido = unido.charAt(0).toUpperCase() + unido.slice(1).toLowerCase();
+                                if (!unido.endsWith(".")) unido += ".";
+                                opciones[idx] = unido;
+                            }
+                            i++;
+                        } else {
+                            i++;
+                        }
                     }
 
                     if (textoPregunta && opciones.length) {
@@ -508,7 +558,7 @@ function procesarTextoTXT(texto) {
         }
 
         if (esPregunta(l)) {
-            let textoPreguntaLines = [l.replace(/^\d+\.\s*/, "")];
+            let textoPreguntaLines = [limpiarNumeroPregunta(l)];
             i++;
 
             // Primero recolectamos todo el texto de la pregunta hasta encontrar la primera opción (A) o nuevo encabezado
@@ -523,8 +573,27 @@ function procesarTextoTXT(texto) {
 
             // Luego recolectamos las opciones, deteniéndonos si empieza otro examen o pregunta
             while (i < lineas.length && !esPregunta(lineas[i]) && !esEncabezadoAlumnos(lineas[i])) {
-                if (esOpcion(lineas[i])) r.push(normalizarAlternativa(lineas[i]));
-                i++;
+                if (esOpcion(lineas[i])) {
+                    r.push(normalizarAlternativa(lineas[i]));
+                    i++;
+                } else if (r.length > 0 && /^[a-e]\)/.test(r[r.length - 1])) {
+                    let idx = r.length - 1;
+                    let previo = r[idx].replace(/\.$/, "");
+                    let cont = lineas[i].trim()
+                        .replace(/\s*[\+\*]\s*$/, "")
+                        .replace(/\s*[\(\[]\s*(?:x|v|f|correcta|correcto)\s*[\)\]]\s*$/gi, "")
+                        .trim();
+
+                    if (cont) {
+                        let unido = `${previo} ${cont}`.trim();
+                        unido = unido.charAt(0).toUpperCase() + unido.slice(1).toLowerCase();
+                        if (!unido.endsWith(".")) unido += ".";
+                        r[idx] = unido;
+                    }
+                    i++;
+                } else {
+                    i++;
+                }
             }
             r.push("");
             n++;
@@ -606,7 +675,7 @@ function procesarTextoExcel(texto) {
         }
 
         if (esPregunta(l[i])) {
-            let textoPreguntaLines = [l[i].replace(/^\d+\.\s*/, "")];
+            let textoPreguntaLines = [limpiarNumeroPregunta(l[i])];
             i++;
 
             // Recolectar enunciado multi-línea hasta encontrar A o nuevo encabezado
@@ -621,8 +690,16 @@ function procesarTextoExcel(texto) {
             let ops = [];
 
             while (i < l.length && !esPregunta(l[i]) && !esEncabezadoAlumnos(l[i])) {
-                if (esOpcion(l[i])) ops.push(l[i]);
-                i++;
+                if (esOpcion(l[i])) {
+                    ops.push(l[i]);
+                    i++;
+                } else if (ops.length > 0) {
+                    let idx = ops.length - 1;
+                    ops[idx] = ops[idx] + " " + l[i].trim();
+                    i++;
+                } else {
+                    i++;
+                }
             }
             preguntas.push({ num: num++, texto: textoCompleto, opciones: ops });
             continue;
@@ -650,18 +727,20 @@ clearBtn.addEventListener("click", () => {
    EXPORTAR LISTA DE ALUMNOS
 ================================ */
 function limpiarNombreAlumno(texto) {
+    if (RE_TITULOS_IGNORAR.test(texto.trim())) return "";
 
     let limpio = texto
         .replace(RE_ENCABEZADO_ALUMNOS, "")
         // Eliminar información de contacto (celular, etc.) y cualquier residuo de "/ cel:", "celular:", etc.
         .replace(/[\/\s]*\b(celular|cel|CELULAR|CEL)\b\s*:?\s*[\d\s\.\-]*/gi, "")
-        .replace(/^[_•\-\s]+/, "")
-        .replace(/,/g, "")
+        .replace(/^[_•\-\s–—]+/, "")
+        .replace(/[,]/g, "")
         .trim();
 
-    // evitar encabezados sin nombre
+    // evitar encabezados sin nombre o títulos
     if (
-        /^(ALUMNOS?|ALUMNAS?|ALUMNOS\(AS\)|ALUMNO\(A\)|ALUMNA\(O\)|APELLIDOS Y NOMBRES)$/i.test(limpio)
+        /^(ALUMNOS?|ALUMNAS?|ALUMNOS\(AS\)|ALUMNO\(A\)|ALUMNA\(O\)|APELLIDOS Y NOMBRES|ESTUDIANTES?|INTEGRANTES?)$/i.test(limpio) ||
+        RE_TITULOS_IGNORAR.test(limpio)
     ) {
         return "";
     }
@@ -670,27 +749,43 @@ function limpiarNombreAlumno(texto) {
 }
 
 /**
- * Separa una cadena de nombre(s) de alumno por el caracter "/".
- * Ejemplo: "PACHECO PADILLA MADELEYNE LUZ / LOPEZ LOPEZ MEDALIT"
- *   → ["PACHECO PADILLA MADELEYNE LUZ", "LOPEZ LOPEZ MEDALIT"]
- * Si no contiene "/", retorna un array con el nombre original (si no está vacío).
+ * Separa una cadena de nombre(s) de alumno por diversos delimitadores:
+ * "/", ";", "|", "&", guiones ("–", "—", " - "), conjunciones (" Y ", " E "), o numeración interna.
+ * Ejemplo: "TIQUILLAHUANCA FLORES HERMELINDA – PEÑA CORDOVA MARIBEL"
+ *   → ["TIQUILLAHUANCA FLORES HERMELINDA", "PEÑA CORDOVA MARIBEL"]
  */
-function separarAlumnosPorSlash(nombreLimpio) {
+function separarAlumnos(nombreLimpio) {
     if (!nombreLimpio) return [];
 
-    // Separar por "/" y limpiar cada parte
-    const partes = nombreLimpio.split(/\s*\/\s*/);
+    let texto = String(nombreLimpio || "").trim();
+    // Reemplazar numeración interna tipo "1. ALUMNO A 2. ALUMNO B"
+    texto = texto.replace(/(?:^|\s+)\d+[\.\)\:\-]\s*/g, " / ");
+
+    const regexSeparadores = /\s*(?:\/|;|\||&|–|—|\s+-\s*|\s*-\s+|\s+[yY]\s+|\s+[eE]\s+)\s*/;
+    const partes = texto.split(regexSeparadores);
     const resultados = [];
 
     for (const parte of partes) {
-        const nombre = nombreEnMayusculas(parte.trim());
-        if (nombre) {
-            resultados.push(nombre);
+        let n = parte
+            .replace(/^[\d\.\)\:\-_\s•–—]+/, "")
+            .replace(/[\/\s]*\b(celular|cel|CELULAR|CEL)\b\s*:?\s*[\d\s\.\-]*/gi, "")
+            .trim();
+
+        n = nombreEnMayusculas(n);
+
+        if (
+            n &&
+            !/^(ALUMNOS?|ALUMNAS?|ALUMNOS\(AS\)|ALUMNO\(A\)|ALUMNA\(O\)|APELLIDOS Y NOMBRES|ESTUDIANTES?|INTEGRANTES?)$/i.test(n) &&
+            !RE_TITULOS_IGNORAR.test(n)
+        ) {
+            resultados.push(n);
         }
     }
 
     return resultados;
 }
+
+const separarAlumnosPorSlash = separarAlumnos;
 
 exportAlumnosBtn.addEventListener("click", () => {
 
@@ -699,45 +794,13 @@ exportAlumnosBtn.addEventListener("click", () => {
         return;
     }
 
-    const lineas = normalizarLineas(textoOriginal);
-
-    let alumnos = [];
-
-    for (let i = 0; i < lineas.length; i++) {
-
-        if (esEncabezadoAlumnos(lineas[i])) {
-
-            // alumno en la misma línea
-            let nombre = limpiarNombreAlumno(lineas[i]);
-
-            separarAlumnosPorSlash(nombre).forEach(alumno => alumnos.push(alumno));
-
-            i++;
-
-            // alumnos en líneas siguientes
-            while (
-                i < lineas.length &&
-                !esEncabezadoAlumnos(lineas[i]) &&
-                !/^TEMA/i.test(lineas[i]) &&
-                !esPregunta(lineas[i], lineas[i - 1])
-            ) {
-
-                let alumno = limpiarNombreAlumno(lineas[i]);
-
-                separarAlumnosPorSlash(alumno).forEach(alumnoSeparado => alumnos.push(alumnoSeparado));
-
-                i++;
-            }
-        }
-    }
+    const grupos = extraerGruposDesdeTexto(textoOriginal);
+    const alumnos = grupos.map(g => g.alumno.nombre);
 
     if (!alumnos.length) {
         alert("No se encontraron alumnos.");
         return;
     }
-
-    // eliminar duplicados por seguridad
-    alumnos = [...new Set(alumnos)];
 
     // enumerar
     const textoLista = alumnos
@@ -1043,9 +1106,35 @@ function analizarEstructuraPreguntas(grupos) {
     let totalPreguntas = 0;
     let advertenciasMapa = new Map();
 
+    // Determinar la cantidad estándar de preguntas por examen (la moda)
+    const conteos = grupos.map(g => (g.preguntas ? g.preguntas.length : 0));
+    const frecuencias = new Map();
+    let maxFreq = 0;
+    let preguntasEstandar = 10;
+
+    conteos.forEach(c => {
+        const f = (frecuencias.get(c) || 0) + 1;
+        frecuencias.set(c, f);
+        if (f > maxFreq && c > 0) {
+            maxFreq = f;
+            preguntasEstandar = c;
+        }
+    });
+
+    const alumnosIncompletos = [];
+
     grupos.forEach(grupo => {
         const alumnoNombre = grupo.alumno ? (grupo.alumno.nombre || "Desconocido") : "Desconocido";
         const preguntas = grupo.preguntas || [];
+
+        if (preguntas.length !== preguntasEstandar) {
+            alumnosIncompletos.push({
+                alumno: alumnoNombre,
+                cantidad: preguntas.length,
+                esperadas: preguntasEstandar
+            });
+        }
+
         preguntas.forEach((pregunta, idx) => {
             totalPreguntas++;
             const numAlternativas = pregunta.opciones ? pregunta.opciones.length : 0;
@@ -1053,7 +1142,6 @@ function analizarEstructuraPreguntas(grupos) {
                 const numeroPregunta = idx + 1;
                 const textoPregunta = pregunta.texto || "Sin enunciado";
 
-                // Generar una clave única combinando el número de pregunta y el texto normalizado
                 const key = `${numeroPregunta}_${textoPregunta.trim().toUpperCase().replace(/\s+/g, " ")}`;
 
                 if (advertenciasMapa.has(key)) {
@@ -1080,12 +1168,13 @@ function analizarEstructuraPreguntas(grupos) {
         cantidadAlternativas: adv.cantidadAlternativas
     }));
 
-    // Detectar duplicados
     const duplicados = detectarDuplicados(grupos);
 
     return {
         totalAlumnos,
         totalPreguntas,
+        preguntasEstandar,
+        alumnosIncompletos,
         advertencias,
         ...duplicados
     };
@@ -1106,6 +1195,7 @@ function renderizarAnalisisDashboard(resultado) {
     const totalAlumnos = resultado.totalAlumnos;
     const totalPreguntas = resultado.totalPreguntas;
     const numAdvertencias = resultado.advertencias.length;
+    const numIncompletos = resultado.alumnosIncompletos ? resultado.alumnosIncompletos.length : 0;
     
     const dupIden = resultado.duplicadosPreguntasIdenticas || [];
     const numDupIden = dupIden.length;
@@ -1129,17 +1219,21 @@ function renderizarAnalisisDashboard(resultado) {
                 <span><strong>Error de Análisis:</strong> No se detectaron preguntas en el archivo cargado. Verifica que el archivo no esté vacío y que las preguntas sigan el formato correcto (ej. "1. ¿Enunciado?").</span>
             </div>
         `;
-    } else if (numAdvertencias === 0) {
+    } else if (numAdvertencias === 0 && numIncompletos === 0) {
         statusHtml = `
             <div class="status-banner success">
                 <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                     <polyline points="22 4 12 14.01 9 11.01"/>
                 </svg>
-                <span><strong>¡Estructura Correcta!</strong> Todas las preguntas de los exámenes cargados contienen exactamente las 5 alternativas reglamentarias (a-e).</span>
+                <span><strong>¡Estructura Correcta!</strong> Todos los exámenes contienen exactamente las 5 alternativas reglamentarias (a-e) y la cantidad estándar de ${resultado.preguntasEstandar} preguntas.</span>
             </div>
         `;
     } else {
+        let msg = [];
+        if (numAdvertencias > 0) msg.push(`<strong>${numAdvertencias}</strong> preguntas con número de alternativas ≠ 5`);
+        if (numIncompletos > 0) msg.push(`<strong>${numIncompletos}</strong> examen(es) con cantidad de preguntas diferente a la estándar (${resultado.preguntasEstandar} pgs)`);
+
         statusHtml = `
             <div class="status-banner warning">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1147,7 +1241,28 @@ function renderizarAnalisisDashboard(resultado) {
                     <line x1="12" y1="9" x2="12" y2="13"/>
                     <line x1="12" y1="17" x2="12.01" y2="17"/>
                 </svg>
-                <span><strong>Atención:</strong> Se detectaron <strong>${numAdvertencias}</strong> preguntas que no cumplen con las 5 alternativas requeridas (a-e). Por favor, verifica el listado a continuación.</span>
+                <span><strong>Atención:</strong> Se detectaron observaciones: ${msg.join(" y ")}. Verifica el detalle a continuación.</span>
+            </div>
+        `;
+    }
+
+    // --- Detalle de Exámenes Incompletos ---
+    let incompletosHtml = "";
+    if (numIncompletos > 0) {
+        incompletosHtml = `
+            <div class="warning-list-container" style="border-left: 4px solid #f59e0b; background: rgba(245, 158, 11, 0.05);">
+                <div class="warning-list-title" style="color: #f59e0b;">Detalle de Exámenes con Cantidad Atípica de Preguntas:</div>
+                <div class="warning-list">
+                    ${resultado.alumnosIncompletos.map(inc => `
+                        <div class="warning-item" style="border-left-color: #f59e0b;">
+                            <div class="warning-header">
+                                <span class="warning-student">${inc.alumno}</span>
+                                <span class="warning-badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">${inc.cantidad} preguntas (${inc.cantidad < inc.esperadas ? 'faltan ' + (inc.esperadas - inc.cantidad) : 'sobran ' + (inc.cantidad - inc.esperadas)})</span>
+                            </div>
+                            <div class="warning-desc">Se detectaron ${inc.cantidad} preguntas en este examen (el promedio/estándar del lote es ${inc.esperadas} preguntas).</div>
+                        </div>
+                    `).join('')}
+                </div>
             </div>
         `;
     }
@@ -1263,6 +1378,8 @@ function renderizarAnalisisDashboard(resultado) {
             </div>`;
     }
 
+    const promedioPorAlumno = totalAlumnos > 0 ? Math.round(totalPreguntas / totalAlumnos) : 0;
+
     panel.innerHTML = `
         <div class="analysis-header-title">
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1282,18 +1399,19 @@ function renderizarAnalisisDashboard(resultado) {
             <div class="kpi-card ${totalPreguntas === 0 ? 'error-active' : ''}">
                 <span class="kpi-title">Total Preguntas</span>
                 <span class="kpi-value">${totalPreguntas}</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted, #94a3b8); margin-top: 4px;">~${promedioPorAlumno} pgs / alumno</span>
             </div>
             <div class="kpi-card ${numAdvertencias > 0 && totalPreguntas > 0 ? 'warning-active' : ''}">
                 <span class="kpi-title">Advertencias (≠ 5 Alts)</span>
                 <span class="kpi-value">${numAdvertencias}</span>
             </div>
+            <div class="kpi-card ${numIncompletos > 0 ? 'warning-active' : ''}">
+                <span class="kpi-title">Exámenes Incompletos</span>
+                <span class="kpi-value">${numIncompletos}</span>
+            </div>
             <div class="kpi-card ${numDupIden > 0 ? 'duplicate-active' : ''}">
                 <span class="kpi-title">Preguntas Idénticas</span>
                 <span class="kpi-value">${numDupIden}</span>
-            </div>
-            <div class="kpi-card ${numDupDif > 0 ? 'duplicate-active' : ''}">
-                <span class="kpi-title">Enunciados Iguales c/ Alts Dif</span>
-                <span class="kpi-value">${numDupDif}</span>
             </div>
             <div class="kpi-card ${numDupAltInt > 0 ? 'duplicate-alt-active' : ''}">
                 <span class="kpi-title">Alternativas Dup. en Preg.</span>
@@ -1301,6 +1419,7 @@ function renderizarAnalisisDashboard(resultado) {
             </div>
         </div>
         ${statusHtml}
+        ${incompletosHtml}
         ${warningListHtml}
         ${dupIdenHtml}
         ${dupDifHtml}
