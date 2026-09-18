@@ -413,6 +413,19 @@ function extraerGruposDesdeTexto(texto) {
                 i++;
             }
 
+            let temaGrupo = "";
+            while (
+                i < lineas.length &&
+                !esPregunta(lineas[i]) &&
+                !esEncabezadoAlumnos(lineas[i], lineas, i)
+            ) {
+                if (/^TEMA/i.test(lineas[i])) {
+                    let temaParte = lineas[i].replace(/^TEMA\s*[:\-\s]*/i, "").trim();
+                    temaGrupo = temaGrupo ? `${temaGrupo} ${temaParte}` : temaParte;
+                }
+                i++;
+            }
+
             let preguntasGrupo = [];
 
             while (i < lineas.length) {
@@ -490,6 +503,7 @@ function extraerGruposDesdeTexto(texto) {
                         numero,
                         nombre: nombreEnMayusculas(alumnoNombre)
                     },
+                    tema: temaGrupo,
                     preguntas: preguntasGrupo.map(p => ({
                         texto: p.texto,
                         opciones: [...p.opciones]
@@ -789,22 +803,26 @@ const separarAlumnosPorSlash = separarAlumnos;
 
 exportAlumnosBtn.addEventListener("click", () => {
 
-    if (!textoOriginal) {
+    let alumnos = [];
+
+    if (datosExcelCargado && datosExcelCargado.grupos) {
+        alumnos = datosExcelCargado.grupos.map(g => g.alumno.nombre);
+    } else if (textoOriginal) {
+        const grupos = extraerGruposDesdeTexto(textoOriginal);
+        alumnos = grupos.map(g => g.alumno.nombre);
+    } else {
         alert("Primero carga un archivo.");
         return;
     }
-
-    const grupos = extraerGruposDesdeTexto(textoOriginal);
-    const alumnos = grupos.map(g => g.alumno.nombre);
 
     if (!alumnos.length) {
         alert("No se encontraron alumnos.");
         return;
     }
 
-    // enumerar
+    // enumerar con 2 dígitos (01., 02., ..., 09., 10., ...)
     const textoLista = alumnos
-        .map((a, index) => `${index + 1}. ${nombreEnMayusculas(a)}`)
+        .map((a, index) => `${String(index + 1).padStart(2, "0")}. ${nombreEnMayusculas(a)}`)
         .join("\n");
 
     // descargar
@@ -971,17 +989,102 @@ function normalizarTextoComparacion(texto) {
 }
 
 /**
+ * Normaliza un nombre para comparación: minúsculas, sin tildes,
+ * sin signos y con orden alfabético de palabras para detectar
+ * casos como "JUAN PÉREZ" y "Pérez, Juan".
+ */
+function normalizarNombreParaComparar(nombre) {
+    if (!nombre) return "";
+    const limpio = normalizarTextoComparacion(nombre);
+    const palabras = limpio.split(/\s+/).filter(Boolean);
+    return palabras.sort().join(" ");
+}
+
+/**
+ * Detecta si hay un mismo alumno/a en múltiples grupos de examen.
+ * Identifica además si los grupos corresponden a tipos de examen distintos
+ * (preguntas diferentes / contenidos distintos) o al mismo tipo de examen.
+ *
+ * @param {Array} grupos - Array de grupos parseados.
+ * @returns {Array} Lista de alumnos duplicados con sus detalles de grupos y tipos.
+ */
+function detectarAlumnosDuplicados(grupos) {
+    if (!Array.isArray(grupos) || grupos.length === 0) return [];
+
+    const mapaAlumnos = new Map();
+
+    grupos.forEach((grupo, idx) => {
+        const alumnoObj = grupo.alumno || {};
+        const nombreOriginal = (alumnoObj.nombre || "").trim();
+        if (!nombreOriginal) return;
+
+        const claveNorm = normalizarNombreParaComparar(nombreOriginal);
+        if (!claveNorm) return;
+
+        const huellaPreguntas = (grupo.preguntas || [])
+            .map(p => normalizarTextoComparacion(p.texto))
+            .join("|");
+
+        const previewPregunta = (grupo.preguntas && grupo.preguntas.length > 0 && grupo.preguntas[0].texto)
+            ? (grupo.preguntas[0].texto.length > 65
+                ? grupo.preguntas[0].texto.substring(0, 65) + "..."
+                : grupo.preguntas[0].texto)
+            : "";
+
+        const detalle = {
+            indice: idx + 1,
+            numero: alumnoObj.numero || String(idx + 1).padStart(2, "0"),
+            tema: (grupo.tema || "").trim(),
+            totalPreguntas: (grupo.preguntas || []).length,
+            huella: huellaPreguntas,
+            preview: previewPregunta
+        };
+
+        if (!mapaAlumnos.has(claveNorm)) {
+            mapaAlumnos.set(claveNorm, {
+                nombre: nombreEnMayusculas(nombreOriginal),
+                apariciones: []
+            });
+        }
+
+        mapaAlumnos.get(claveNorm).apariciones.push(detalle);
+    });
+
+    const duplicados = [];
+
+    mapaAlumnos.forEach((data) => {
+        if (data.apariciones.length > 1) {
+            const huellasUnicas = new Set(data.apariciones.map(a => a.huella));
+            const tiposDistintos = huellasUnicas.size > 1;
+
+            duplicados.push({
+                nombre: data.nombre,
+                coincidencias: data.apariciones.length,
+                tiposDistintos: tiposDistintos,
+                cantidadTiposExamen: huellasUnicas.size,
+                grupos: data.apariciones
+            });
+        }
+    });
+
+    return duplicados;
+}
+
+/**
  * Detecta:
- *  1. Preguntas idénticas (enunciado y alternativas iguales) dentro del mismo examen.
- *  2. Enunciados iguales pero alternativas distintas dentro del mismo examen.
- *  3. Alternativas duplicadas dentro de una misma pregunta.
+ *  1. Alumnos duplicados en 2 o más grupos de examen (tipos iguales o distintos).
+ *  2. Preguntas idénticas (enunciado y alternativas iguales) dentro del mismo examen.
+ *  3. Enunciados iguales pero alternativas distintas dentro del mismo examen.
+ *  4. Alternativas duplicadas dentro de una misma pregunta.
  *
  *  (Agrupa por huella de examen para tratar varios alumnos del mismo examen como uno solo).
  *
  * @param {Array} grupos  - Array de grupos parseados.
- * @returns {Object} Objetos con las 3 categorías de duplicados.
+ * @returns {Object} Objetos con las categorías de duplicados.
  */
 function detectarDuplicados(grupos) {
+    const duplicadosAlumnos = detectarAlumnosDuplicados(grupos);
+
     // Huella para agrupar alumnos que comparten el mismo examen
     function calcularHuella(grupo) {
         return (grupo.preguntas || [])
@@ -1093,6 +1196,7 @@ function detectarDuplicados(grupos) {
     });
 
     return { 
+        duplicadosAlumnos,
         duplicadosPreguntasIdenticas, 
         duplicadosEnunciadosIgualesAltsDistintas, 
         duplicadosAlternativasInternas 
@@ -1197,6 +1301,9 @@ function renderizarAnalisisDashboard(resultado) {
     const numAdvertencias = resultado.advertencias.length;
     const numIncompletos = resultado.alumnosIncompletos ? resultado.alumnosIncompletos.length : 0;
     
+    const dupAlumnos = resultado.duplicadosAlumnos || [];
+    const numDupAlumnos = dupAlumnos.length;
+
     const dupIden = resultado.duplicadosPreguntasIdenticas || [];
     const numDupIden = dupIden.length;
     
@@ -1219,18 +1326,19 @@ function renderizarAnalisisDashboard(resultado) {
                 <span><strong>Error de Análisis:</strong> No se detectaron preguntas en el archivo cargado. Verifica que el archivo no esté vacío y que las preguntas sigan el formato correcto (ej. "1. ¿Enunciado?").</span>
             </div>
         `;
-    } else if (numAdvertencias === 0 && numIncompletos === 0) {
+    } else if (numAdvertencias === 0 && numIncompletos === 0 && numDupAlumnos === 0) {
         statusHtml = `
             <div class="status-banner success">
                 <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                     <polyline points="22 4 12 14.01 9 11.01"/>
                 </svg>
-                <span><strong>¡Estructura Correcta!</strong> Todos los exámenes contienen exactamente las 5 alternativas reglamentarias (a-e) y la cantidad estándar de ${resultado.preguntasEstandar} preguntas.</span>
+                <span><strong>¡Estructura Correcta!</strong> Todos los exámenes contienen exactamente las 5 alternativas reglamentarias (a-e), la cantidad estándar de ${resultado.preguntasEstandar} preguntas y no hay alumnos duplicados.</span>
             </div>
         `;
     } else {
         let msg = [];
+        if (numDupAlumnos > 0) msg.push(`<strong>${numDupAlumnos}</strong> alumno(s) duplicado(s) en diferentes grupos de examen`);
         if (numAdvertencias > 0) msg.push(`<strong>${numAdvertencias}</strong> preguntas con número de alternativas ≠ 5`);
         if (numIncompletos > 0) msg.push(`<strong>${numIncompletos}</strong> examen(es) con cantidad de preguntas diferente a la estándar (${resultado.preguntasEstandar} pgs)`);
 
@@ -1284,6 +1392,64 @@ function renderizarAnalisisDashboard(resultado) {
                         </div>
                     `).join('')}
                 </div>
+            </div>
+        `;
+    }
+
+    // --- Sección Alumnos Duplicados ---
+    let dupAlumnosHtml = "";
+    if (numDupAlumnos > 0) {
+        const items = dupAlumnos.map(da => {
+            const gruposListHtml = da.grupos.map(g => `
+                <div class="dup-student-group-chip">
+                    <span class="group-num-pill">Grupo ${g.numero}</span>
+                    <span class="group-preg-count">${g.totalPreguntas} preguntas</span>
+                    ${g.tema ? `<span class="group-tema-tag" title="${g.tema}">Tema: <em>${g.tema}</em></span>` : ''}
+                    ${!g.tema && g.preview ? `<span class="group-tema-tag" title="${g.preview}">Preg 1: <em>${g.preview}</em></span>` : ''}
+                </div>
+            `).join("");
+
+            const tipoBadgeClass = da.tiposDistintos ? "badge-tipo-distinto" : "badge-tipo-mismo";
+            const tipoBadgeText = da.tiposDistintos
+                ? `⚠️ Encontrado en ${da.cantidadTiposExamen} tipos de examen distintos (preguntas diferentes)`
+                : `ℹ️ Mismo tipo de examen (preguntas idénticas repetidas)`;
+
+            return `
+                <div class="dup-item dup-student-card ${da.tiposDistintos ? 'has-distinct-types' : ''}">
+                    <div class="dup-header">
+                        <div class="dup-student-title">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                            <span class="dup-student-name">${da.nombre}</span>
+                        </div>
+                        <span class="dup-count-badge">${da.coincidencias} grupos asignados</span>
+                    </div>
+                    <div class="dup-tipo-status ${tipoBadgeClass}">
+                        ${tipoBadgeText}
+                    </div>
+                    <div class="dup-student-groups-wrap">
+                        ${gruposListHtml}
+                    </div>
+                </div>
+            `;
+        }).join("");
+
+        dupAlumnosHtml = `
+            <div class="dup-section dup-section--student">
+                <button class="collapsible-toggle collapsible-toggle--student" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('collapsed')">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    Alumnos Duplicados en Grupos de Examen
+                    <span class="collapsible-count">${numDupAlumnos}</span>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="dup-list">${items}</div>
             </div>
         `;
     }
@@ -1409,6 +1575,11 @@ function renderizarAnalisisDashboard(resultado) {
                 <span class="kpi-title">Exámenes Incompletos</span>
                 <span class="kpi-value">${numIncompletos}</span>
             </div>
+            <div class="kpi-card ${numDupAlumnos > 0 ? 'duplicate-student-active' : ''}">
+                <span class="kpi-title">Alumnos Duplicados</span>
+                <span class="kpi-value">${numDupAlumnos}</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted, #94a3b8); margin-top: 4px;">${numDupAlumnos > 0 ? `${numDupAlumnos} en múltiples grupos` : 'Sin duplicados'}</span>
+            </div>
             <div class="kpi-card ${numDupIden > 0 ? 'duplicate-active' : ''}">
                 <span class="kpi-title">Preguntas Idénticas</span>
                 <span class="kpi-value">${numDupIden}</span>
@@ -1419,6 +1590,7 @@ function renderizarAnalisisDashboard(resultado) {
             </div>
         </div>
         ${statusHtml}
+        ${dupAlumnosHtml}
         ${incompletosHtml}
         ${warningListHtml}
         ${dupIdenHtml}

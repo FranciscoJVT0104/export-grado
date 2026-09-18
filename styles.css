@@ -838,3 +838,163 @@ textarea::-webkit-scrollbar-thumb:hover {
     font-size: 0.72rem;
     font-weight: 600;
 }
+
+/* ================================================
+   KPI Cards & Sección — Alumnos Duplicados (Rosa / Coral)
+================================================ */
+.kpi-card.duplicate-student-active {
+    border-color: rgba(244, 63, 94, 0.35);
+    background: rgba(244, 63, 94, 0.04);
+}
+
+.kpi-card.duplicate-student-active:hover {
+    border-color: rgba(244, 63, 94, 0.55);
+    background: rgba(244, 63, 94, 0.08);
+}
+
+.kpi-card.duplicate-student-active .kpi-value {
+    background: linear-gradient(135deg, #fda4af 0%, #f43f5e 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.dup-section--student {
+    border-color: rgba(244, 63, 94, 0.25);
+}
+
+.collapsible-toggle--student {
+    background: rgba(244, 63, 94, 0.08);
+    color: #fda4af;
+    border-color: rgba(244, 63, 94, 0.2);
+}
+
+.collapsible-toggle--student:hover {
+    background: rgba(244, 63, 94, 0.14);
+}
+
+.collapsible-toggle--student svg:first-child {
+    color: #fb7185;
+}
+
+.collapsible-toggle--student .collapsible-count {
+    background: rgba(244, 63, 94, 0.22);
+    color: #fecdd3;
+    border-color: rgba(244, 63, 94, 0.35);
+}
+
+.dup-student-card {
+    background: rgba(244, 63, 94, 0.03);
+    border: 1px solid rgba(244, 63, 94, 0.15);
+    border-left: 4px solid #f43f5e;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-radius: 8px;
+    transition: transform 0.2s;
+}
+
+.dup-student-card:hover {
+    transform: translateX(2px);
+    background: rgba(244, 63, 94, 0.06);
+}
+
+.dup-student-card.has-distinct-types {
+    border-left: 4px solid #e11d48;
+    background: rgba(225, 29, 72, 0.05);
+}
+
+.dup-student-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dup-student-title svg {
+    color: #fb7185;
+    flex-shrink: 0;
+}
+
+.dup-student-name {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.02em;
+}
+
+.dup-count-badge {
+    background: rgba(244, 63, 94, 0.18);
+    color: #fda4af;
+    border: 1px solid rgba(244, 63, 94, 0.3);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.dup-tipo-status {
+    font-size: 0.78rem;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.dup-tipo-status.badge-tipo-distinto {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.28);
+    color: #fca5a5;
+}
+
+.dup-tipo-status.badge-tipo-mismo {
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    color: #93c5fd;
+}
+
+.dup-student-groups-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.dup-student-group-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.76rem;
+    max-width: 100%;
+}
+
+.group-num-pill {
+    background: rgba(244, 63, 94, 0.22);
+    color: #fda4af;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    flex-shrink: 0;
+}
+
+.group-preg-count {
+    color: var(--text-muted);
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.group-tema-tag {
+    color: #e2e8f0;
+    max-width: 320px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.group-tema-tag em {
+    color: #fbbf24;
+    font-style: normal;
+}
