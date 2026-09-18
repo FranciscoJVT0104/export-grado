@@ -45,11 +45,11 @@ const getSeparadorOpcion = linea => {
 const esOpcion = linea => getLetraOpcion(linea) !== null;
 const esAlternativa = linea => getLetraOpcion(linea) !== null;
 
-function normalizarAlternativa(linea) {
+function normalizarAlternativa(linea, letraForzada) {
     const match = String(linea || "").trim().match(/^\s*[*+•]?\s*\(?\s*([a-eA-E])\s*[\.\)\:\-\/]+\s*(.*)$/);
     if (!match) return String(linea || "").trim();
 
-    const letra = match[1].toLowerCase();
+    const letra = letraForzada ? letraForzada.toLowerCase() : match[1].toLowerCase();
     let texto = match[2].trim();
 
     // Limpiar sufijos de respuestas correctas o marcas adicionales como + o *
@@ -449,6 +449,7 @@ function extraerGruposDesdeTexto(texto) {
 
                     let textoPregunta = normalizarPregunta(textoPreguntaLines.join(" "));
                     let opciones = [];
+                    let letrasOriginales = [];
 
                     while (
                         i < lineas.length &&
@@ -456,6 +457,11 @@ function extraerGruposDesdeTexto(texto) {
                         !esEncabezadoAlumnos(lineas[i], lineas, i)
                     ) {
                         if (esAlternativa(lineas[i])) {
+                            let letraDetectada = getLetraOpcion(lineas[i]);
+                            if (letraDetectada) {
+                                letrasOriginales.push(letraDetectada);
+                            }
+
                             let opcion = normalizarAlternativa(lineas[i])
                                 .replace(/^[a-e]\)\s*/i, "")
                                 .trim();
@@ -485,7 +491,8 @@ function extraerGruposDesdeTexto(texto) {
                     if (textoPregunta && opciones.length) {
                         preguntasGrupo.push({
                             texto: textoPregunta,
-                            opciones: opciones
+                            opciones: opciones,
+                            letrasOriginales: letrasOriginales
                         });
                     }
                     continue;
@@ -506,7 +513,8 @@ function extraerGruposDesdeTexto(texto) {
                     tema: temaGrupo,
                     preguntas: preguntasGrupo.map(p => ({
                         texto: p.texto,
-                        opciones: [...p.opciones]
+                        opciones: [...p.opciones],
+                        letrasOriginales: p.letrasOriginales ? [...p.letrasOriginales] : []
                     }))
                 });
 
@@ -585,12 +593,15 @@ function procesarTextoTXT(texto) {
 
             r.push(`${n}. ${normalizarPregunta(textoPreguntaLines.join(" "))}`);
 
-            // Luego recolectamos las opciones, deteniéndonos si empieza otro examen o pregunta
+            // Luego recolectamos las opciones con letras consecutivas reglamentarias (a, b, c, d, e...)
+            let opcIndex = 0;
             while (i < lineas.length && !esPregunta(lineas[i]) && !esEncabezadoAlumnos(lineas[i])) {
                 if (esOpcion(lineas[i])) {
-                    r.push(normalizarAlternativa(lineas[i]));
+                    const letraEsperada = String.fromCharCode(97 + opcIndex);
+                    r.push(normalizarAlternativa(lineas[i], letraEsperada));
+                    opcIndex++;
                     i++;
-                } else if (r.length > 0 && /^[a-e]\)/.test(r[r.length - 1])) {
+                } else if (r.length > 0 && /^[a-z]\)/.test(r[r.length - 1])) {
                     let idx = r.length - 1;
                     let previo = r[idx].replace(/\.$/, "");
                     let cont = lineas[i].trim()
@@ -1242,9 +1253,44 @@ function analizarEstructuraPreguntas(grupos) {
         preguntas.forEach((pregunta, idx) => {
             totalPreguntas++;
             const numAlternativas = pregunta.opciones ? pregunta.opciones.length : 0;
-            if (numAlternativas !== 5) {
+            const letras = (pregunta.letrasOriginales || []).map(l => l.toLowerCase());
+            const letrasStr = letras.join("");
+
+            // Comprobar formato reglamentario: 5 alternativas y secuencia 'a', 'b', 'c', 'd', 'e'
+            const esFormatoCorrecto = (numAlternativas === 5) && (letras.length === 0 || letrasStr === "abcde");
+
+            if (!esFormatoCorrecto) {
                 const numeroPregunta = idx + 1;
                 const textoPregunta = pregunta.texto || "Sin enunciado";
+
+                let badge = "";
+                let detalle = "";
+                let autoCorregido = false;
+
+                if (numAlternativas !== 5) {
+                    badge = `${numAlternativas} alternativas`;
+                    detalle = `Tiene ${numAlternativas} alternativas en vez de las 5 reglamentarias (a, b, c, d, e).`;
+                } else {
+                    // Tiene 5 alternativas pero las letras no son a, b, c, d, e (ej. a, b, b, c, d)
+                    const conteoLetras = {};
+                    letras.forEach(l => { conteoLetras[l] = (conteoLetras[l] || 0) + 1; });
+
+                    const repetidas = Object.keys(conteoLetras).filter(l => conteoLetras[l] > 1);
+                    const esperadas = ['a', 'b', 'c', 'd', 'e'];
+                    const faltantes = esperadas.filter(l => !letras.includes(l));
+
+                    let partes = [];
+                    if (repetidas.length > 0) {
+                        partes.push(`letra(s) repetida(s): ${repetidas.map(r => `"${r}" (${conteoLetras[r]} veces)`).join(", ")}`);
+                    }
+                    if (faltantes.length > 0) {
+                        partes.push(`falta(n): ${faltantes.map(f => `"${f}"`).join(", ")}`);
+                    }
+
+                    badge = `Letras: ${letras.join(", ")}`;
+                    detalle = `No cumple con el formato a-e: se detectaron [${letras.join(", ")}]. ${partes.join(" | ")}.`;
+                    autoCorregido = true;
+                }
 
                 const key = `${numeroPregunta}_${textoPregunta.trim().toUpperCase().replace(/\s+/g, " ")}`;
 
@@ -1258,7 +1304,10 @@ function analizarEstructuraPreguntas(grupos) {
                         alumnos: [alumnoNombre],
                         numeroPregunta: numeroPregunta,
                         textoPregunta: textoPregunta,
-                        cantidadAlternativas: numAlternativas
+                        cantidadAlternativas: numAlternativas,
+                        badge: badge,
+                        detalle: detalle,
+                        autoCorregido: autoCorregido
                     });
                 }
             }
@@ -1269,7 +1318,10 @@ function analizarEstructuraPreguntas(grupos) {
         alumno: adv.alumnos.join(" / "),
         numeroPregunta: adv.numeroPregunta,
         textoPregunta: adv.textoPregunta,
-        cantidadAlternativas: adv.cantidadAlternativas
+        cantidadAlternativas: adv.cantidadAlternativas,
+        badge: adv.badge,
+        detalle: adv.detalle,
+        autoCorregido: adv.autoCorregido
     }));
 
     const duplicados = detectarDuplicados(grupos);
@@ -1339,7 +1391,7 @@ function renderizarAnalisisDashboard(resultado) {
     } else {
         let msg = [];
         if (numDupAlumnos > 0) msg.push(`<strong>${numDupAlumnos}</strong> alumno(s) duplicado(s) en diferentes grupos de examen`);
-        if (numAdvertencias > 0) msg.push(`<strong>${numAdvertencias}</strong> preguntas con número de alternativas ≠ 5`);
+        if (numAdvertencias > 0) msg.push(`<strong>${numAdvertencias}</strong> preguntas con inconsistencia en alternativas (≠ 5 alts o fuera del formato a-e)`);
         if (numIncompletos > 0) msg.push(`<strong>${numIncompletos}</strong> examen(es) con cantidad de preguntas diferente a la estándar (${resultado.preguntasEstandar} pgs)`);
 
         statusHtml = `
@@ -1380,15 +1432,17 @@ function renderizarAnalisisDashboard(resultado) {
     if (numAdvertencias > 0) {
         warningListHtml = `
             <div class="warning-list-container">
-                <div class="warning-list-title">Detalle de Inconsistencias de Alternativas:</div>
+                <div class="warning-list-title">Detalle de Inconsistencias de Alternativas (formato a-e):</div>
                 <div class="warning-list">
                     ${resultado.advertencias.map(adv => `
                         <div class="warning-item">
                             <div class="warning-header">
                                 <span class="warning-student">${adv.alumno}</span>
-                                <span class="warning-badge">${adv.cantidadAlternativas} alternativas</span>
+                                <span class="warning-badge">${adv.badge || `${adv.cantidadAlternativas} alternativas`}</span>
                             </div>
-                            <div class="warning-desc">Pregunta ${adv.numeroPregunta}: "${adv.textoPregunta}"</div>
+                            <div class="warning-desc">Pregunta ${adv.numeroPregunta}: &ldquo;${adv.textoPregunta}&rdquo;</div>
+                            ${adv.detalle ? `<div class="warning-detalle" style="font-size: 0.78rem; color: #fbbf24; margin-top: 4px;">⚠️ ${adv.detalle}</div>` : ''}
+                            ${adv.autoCorregido ? `<div class="warning-autofix" style="font-size: 0.74rem; color: #34d399; margin-top: 3px;">✔ En el texto procesado se reordenaron automáticamente con letras consecutivas (a, b, c, d, e).</div>` : ''}
                         </div>
                     `).join('')}
                 </div>
@@ -1568,8 +1622,9 @@ function renderizarAnalisisDashboard(resultado) {
                 <span style="font-size: 0.75rem; color: var(--text-muted, #94a3b8); margin-top: 4px;">~${promedioPorAlumno} pgs / alumno</span>
             </div>
             <div class="kpi-card ${numAdvertencias > 0 && totalPreguntas > 0 ? 'warning-active' : ''}">
-                <span class="kpi-title">Advertencias (≠ 5 Alts)</span>
+                <span class="kpi-title">Inconsistencias (Alternativas)</span>
                 <span class="kpi-value">${numAdvertencias}</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted, #94a3b8); margin-top: 4px;">${numAdvertencias > 0 ? `${numAdvertencias} con error a-e o cant.` : 'Formato reglamentario a-e'}</span>
             </div>
             <div class="kpi-card ${numIncompletos > 0 ? 'warning-active' : ''}">
                 <span class="kpi-title">Exámenes Incompletos</span>
