@@ -32,21 +32,27 @@ function normalizarLineas(texto) {
 /* ===============================
    DETECTORES
 ================================ */
+const RE_OPCION_LETRA = /^\s*[*+•]?\s*\(?\s*([a-zA-Z])\s*[\.\)\:\-\/]+(?:\s+|$|(?=[A-Za-zÁÉÍÓÚáéíóúÑñ0-9]))/;
+const RE_OPCION_LETRA_COMPLETA = /^\s*[*+•]?\s*\(?\s*([a-zA-Z])\s*[\.\)\:\-\/]+\s*(.*)$/;
+
 const getLetraOpcion = linea => {
-    const match = String(linea || "").match(/^\s*[*+•]?\s*\(?\s*([a-eA-E])\s*[\.\)\:\-\/]+(?:\s+|$|(?=[A-Za-zÁÉÍÓÚáéíóúÑñ0-9]))/);
+    const match = String(linea || "").match(RE_OPCION_LETRA);
     return match ? match[1].toUpperCase() : null;
 };
 
 const getSeparadorOpcion = linea => {
-    const match = String(linea || "").match(/^\s*[*+•]?\s*\(?\s*[a-eA-E]\s*([\.\)\:\-\/]+)/);
+    const match = String(linea || "").match(/^\s*[*+•]?\s*\(?\s*[a-zA-Z]\s*([\.\)\:\-\/]+)/);
     return match ? match[1] : null;
 };
 
 const esOpcion = linea => getLetraOpcion(linea) !== null;
 const esAlternativa = linea => getLetraOpcion(linea) !== null;
+const esTema = linea => /^TEMA\b/i.test(String(linea || "").trim());
+const extraerTextoTema = linea => String(linea || "").replace(/^TEMA\b\s*[:\-\s]*/i, "").trim();
+const esLetraReglamentaria = letra => /^[A-E]$/i.test(String(letra || ""));
 
 function normalizarAlternativa(linea, letraForzada) {
-    const match = String(linea || "").trim().match(/^\s*[*+•]?\s*\(?\s*([a-eA-E])\s*[\.\)\:\-\/]+\s*(.*)$/);
+    const match = String(linea || "").trim().match(RE_OPCION_LETRA_COMPLETA);
     if (!match) return String(linea || "").trim();
 
     const letra = letraForzada ? letraForzada.toLowerCase() : match[1].toLowerCase();
@@ -93,13 +99,13 @@ function esEncabezadoAlumnos(linea, lineas, index) {
     if (RE_ENCABEZADO_ALUMNOS.test(str)) return true;
 
     // 2. Descartar si es Tema, Pregunta u Opción
-    if (/^TEMA/i.test(str) || esPregunta(str) || esOpcion(str)) return false;
+    if (esTema(str) || esPregunta(str) || esOpcion(str)) return false;
 
     // 3. Si es un nombre implícito (sin etiqueta), debe preceder a "TEMA:" en las siguientes 3 líneas
     // Y no debe ser un título genérico ni instrucción
     if (Array.isArray(lineas) && typeof index === 'number') {
         for (let k = index + 1; k < Math.min(lineas.length, index + 4); k++) {
-            if (/^TEMA/i.test(lineas[k])) {
+            if (esTema(lineas[k])) {
                 const palabras = str.split(/\s+/);
                 const esTituloGenerico = RE_TITULOS_IGNORAR.test(str);
                 return !esTituloGenerico && palabras.length >= 2 && palabras.length <= 6;
@@ -401,7 +407,7 @@ function extraerGruposDesdeTexto(texto) {
 
             while (
                 i < lineas.length &&
-                !/^TEMA/i.test(lineas[i]) &&
+                !esTema(lineas[i]) &&
                 !esPregunta(lineas[i])
             ) {
 
@@ -419,8 +425,11 @@ function extraerGruposDesdeTexto(texto) {
                 !esPregunta(lineas[i]) &&
                 !esEncabezadoAlumnos(lineas[i], lineas, i)
             ) {
-                if (/^TEMA/i.test(lineas[i])) {
-                    let temaParte = lineas[i].replace(/^TEMA\s*[:\-\s]*/i, "").trim();
+                if (esTema(lineas[i])) {
+                    let temaParte = extraerTextoTema(lineas[i]);
+                    temaGrupo = temaGrupo ? `${temaGrupo} ${temaParte}` : temaParte;
+                } else if (temaGrupo !== "" || (i > 0 && esTema(lineas[i - 1]))) {
+                    let temaParte = lineas[i].trim();
                     temaGrupo = temaGrupo ? `${temaGrupo} ${temaParte}` : temaParte;
                 }
                 i++;
@@ -441,8 +450,7 @@ function extraerGruposDesdeTexto(texto) {
                         !esPregunta(lineas[i]) &&
                         !esEncabezadoAlumnos(lineas[i], lineas, i)
                     ) {
-                        let letra = getLetraOpcion(lineas[i]);
-                        if (letra === 'A') break;
+                        if (esOpcion(lineas[i])) break;
                         textoPreguntaLines.push(lineas[i]);
                         i++;
                     }
@@ -463,7 +471,7 @@ function extraerGruposDesdeTexto(texto) {
                             }
 
                             let opcion = normalizarAlternativa(lineas[i])
-                                .replace(/^[a-e]\)\s*/i, "")
+                                .replace(/^[a-z]\)\s*/i, "")
                                 .trim();
 
                             if (opcion) opciones.push(opcion);
@@ -562,7 +570,7 @@ function procesarTextoTXT(texto) {
             i++;
             while (
                 i < lineas.length &&
-                !/^TEMA/i.test(lineas[i]) &&
+                !esTema(lineas[i]) &&
                 !esEncabezadoAlumnos(lineas[i]) &&
                 !esPregunta(lineas[i])
             ) { // Corregido: Usar 'alumno' en lugar de 'n' para evitar confusión con 'n' de número de pregunta
@@ -573,9 +581,23 @@ function procesarTextoTXT(texto) {
             continue;
         }
 
-        if (/^TEMA/i.test(l)) {
-            r.push("TEMA: " + l.replace(/TEMA\s*:/i, "").trim());
+        if (esTema(l)) {
+            const partesTema = [];
+            const temaInline = extraerTextoTema(l);
+            if (temaInline) partesTema.push(temaInline);
+
             i++;
+            while (
+                i < lineas.length &&
+                !esTema(lineas[i]) &&
+                !esEncabezadoAlumnos(lineas[i]) &&
+                !esPregunta(lineas[i])
+            ) {
+                partesTema.push(lineas[i].trim());
+                i++;
+            }
+
+            r.push("TEMA: " + partesTema.join(" ").trim());
             continue;
         }
 
@@ -583,43 +605,38 @@ function procesarTextoTXT(texto) {
             let textoPreguntaLines = [limpiarNumeroPregunta(l)];
             i++;
 
-            // Primero recolectamos todo el texto de la pregunta hasta encontrar la primera opción (A) o nuevo encabezado
+            // Primero recolectamos todo el texto de la pregunta hasta encontrar la primera opción o nuevo encabezado
             while (i < lineas.length && !esPregunta(lineas[i]) && !esEncabezadoAlumnos(lineas[i])) {
-                let letra = getLetraOpcion(lineas[i]);
-                if (letra === 'A') break;
+                if (esOpcion(lineas[i])) break;
                 textoPreguntaLines.push(lineas[i]);
                 i++;
             }
 
             r.push(`${n}. ${normalizarPregunta(textoPreguntaLines.join(" "))}`);
 
-            // Luego recolectamos las opciones con letras consecutivas reglamentarias (a, b, c, d, e...)
-            let opcIndex = 0;
+            const opcionesPregunta = [];
             while (i < lineas.length && !esPregunta(lineas[i]) && !esEncabezadoAlumnos(lineas[i])) {
                 if (esOpcion(lineas[i])) {
-                    const letraEsperada = String.fromCharCode(97 + opcIndex);
-                    r.push(normalizarAlternativa(lineas[i], letraEsperada));
-                    opcIndex++;
+                    opcionesPregunta.push({
+                        letra: getLetraOpcion(lineas[i]),
+                        texto: lineas[i]
+                    });
                     i++;
-                } else if (r.length > 0 && /^[a-z]\)/.test(r[r.length - 1])) {
-                    let idx = r.length - 1;
-                    let previo = r[idx].replace(/\.$/, "");
-                    let cont = lineas[i].trim()
-                        .replace(/\s*[\+\*]\s*$/, "")
-                        .replace(/\s*[\(\[]\s*(?:x|v|f|correcta|correcto)\s*[\)\]]\s*$/gi, "")
-                        .trim();
-
-                    if (cont) {
-                        let unido = `${previo} ${cont}`.trim();
-                        unido = unido.charAt(0).toUpperCase() + unido.slice(1).toLowerCase();
-                        if (!unido.endsWith(".")) unido += ".";
-                        r[idx] = unido;
-                    }
+                } else if (opcionesPregunta.length > 0) {
+                    const idx = opcionesPregunta.length - 1;
+                    opcionesPregunta[idx].texto = `${opcionesPregunta[idx].texto} ${lineas[i].trim()}`.trim();
                     i++;
                 } else {
                     i++;
                 }
             }
+
+            const conservarLetrasOriginales = opcionesPregunta.some(op => !esLetraReglamentaria(op.letra));
+            opcionesPregunta.forEach((op, opcIndex) => {
+                const letraEsperada = String.fromCharCode(97 + opcIndex);
+                r.push(normalizarAlternativa(op.texto, conservarLetrasOriginales ? null : letraEsperada));
+            });
+
             r.push("");
             n++;
             continue;
@@ -665,7 +682,7 @@ function procesarTextoExcel(texto) {
         preguntas.forEach(p => {
             filas.push([`::e_${p.num}::${p.texto}{`]);
             p.opciones.forEach((o, i) => {
-                let limpio = normalizarAlternativa(o).replace(/^[a-e]\)\s*/i, "");
+                let limpio = normalizarAlternativa(o).replace(/^[a-z]\)\s*/i, "");
                 filas.push([(i === 0 ? "=" : "~") + limpio]);
             });
             filas.push(["}"]);
@@ -688,7 +705,7 @@ function procesarTextoExcel(texto) {
             i++;
             while (
                 i < l.length &&
-                !/^TEMA/i.test(l[i]) &&
+                !esTema(l[i]) &&
                 !esEncabezadoAlumnos(l[i]) &&
                 !esPregunta(l[i])
             ) { // Corregido: Usar 'alumnoEnLinea' en lugar de 'x'
@@ -703,10 +720,9 @@ function procesarTextoExcel(texto) {
             let textoPreguntaLines = [limpiarNumeroPregunta(l[i])];
             i++;
 
-            // Recolectar enunciado multi-línea hasta encontrar A o nuevo encabezado
+            // Recolectar enunciado multi-línea hasta encontrar una alternativa o nuevo encabezado
             while (i < l.length && !esPregunta(l[i]) && !esEncabezadoAlumnos(l[i])) {
-                let letra = getLetraOpcion(l[i]);
-                if (letra === 'A') break;
+                if (esOpcion(l[i])) break;
                 textoPreguntaLines.push(l[i]);
                 i++;
             }
@@ -1275,11 +1291,15 @@ function analizarEstructuraPreguntas(grupos) {
                     const conteoLetras = {};
                     letras.forEach(l => { conteoLetras[l] = (conteoLetras[l] || 0) + 1; });
 
-                    const repetidas = Object.keys(conteoLetras).filter(l => conteoLetras[l] > 1);
                     const esperadas = ['a', 'b', 'c', 'd', 'e'];
+                    const repetidas = Object.keys(conteoLetras).filter(l => conteoLetras[l] > 1);
                     const faltantes = esperadas.filter(l => !letras.includes(l));
+                    const fueraDeRango = letras.filter(l => !esperadas.includes(l));
 
                     let partes = [];
+                    if (fueraDeRango.length > 0) {
+                        partes.push(`fuera de a-e: ${fueraDeRango.map(f => `"${f}"`).join(", ")}`);
+                    }
                     if (repetidas.length > 0) {
                         partes.push(`letra(s) repetida(s): ${repetidas.map(r => `"${r}" (${conteoLetras[r]} veces)`).join(", ")}`);
                     }
@@ -1287,9 +1307,12 @@ function analizarEstructuraPreguntas(grupos) {
                         partes.push(`falta(n): ${faltantes.map(f => `"${f}"`).join(", ")}`);
                     }
 
-                    badge = `Letras: ${letras.join(", ")}`;
+                    badge = fueraDeRango.length > 0 ? `Fuera a-e: ${fueraDeRango.join(", ")}` : `Letras: ${letras.join(", ")}`;
                     detalle = `No cumple con el formato a-e: se detectaron [${letras.join(", ")}]. ${partes.join(" | ")}.`;
-                    autoCorregido = true;
+                    if (fueraDeRango.length > 0) {
+                        detalle += " Se conservaron las letras originales del documento.";
+                    }
+                    autoCorregido = fueraDeRango.length === 0;
                 }
 
                 const key = `${numeroPregunta}_${textoPregunta.trim().toUpperCase().replace(/\s+/g, " ")}`;
